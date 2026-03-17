@@ -3,7 +3,7 @@ export const state = {
   currentDate: null,
   currentSymbol: null,
   chartType: 'line',
-  resolution: 1,
+  resolution: 60,
   session: 'all',
   showMA: true,
   useClean: false,

@@ -24,6 +24,23 @@
   .sidebar::-webkit-scrollbar{width:6px}
   .sidebar::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:6px}
 
+  /* Search */
+  .search-box{position:relative;margin-bottom:12px}
+  .search-box input{width:100%;padding:9px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .15s}
+  .search-box input:focus{border-color:var(--accent)}
+  .search-box input::placeholder{color:var(--text3)}
+  .search-results{position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:4px;max-height:300px;overflow-y:auto;z-index:20;display:none}
+  .search-results.visible{display:block}
+  .search-item{padding:8px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);transition:all .1s}
+  .search-item:hover,.search-item.highlighted{background:var(--bg4);color:var(--text)}
+  .search-item .match{color:var(--accent)}
+
+  /* Date Picker */
+  .date-picker{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .date-label-text{color:var(--text3);font-size:11px;font-weight:600;white-space:nowrap}
+  .date-picker select{flex:1;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:inherit;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7382'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+  .date-picker select:focus{border-color:var(--accent)}
+
   .date-group{padding:4px 0 10px 0}
   .date-header{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:var(--radius-md);cursor:pointer;color:var(--text2);font-size:12px;font-weight:600;transition:all .15s;user-select:none;background:var(--bg3)}
   .date-header:hover{background:var(--bg4);color:var(--text)}

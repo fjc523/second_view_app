@@ -1,9 +1,11 @@
 """second_view – FastAPI backend for 1s stock data visualization."""
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 import numpy as np
 import orjson
 import pandas as pd
@@ -13,9 +15,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 
 APP_DIR = Path(__file__).resolve().parent
-ROOT_DIR = APP_DIR.parent
-DATA_DIR = ROOT_DIR / "data" / "1s"
 STATIC_DIR = APP_DIR / "static"
+PARQUET_DIR = Path(os.environ.get("PARQUET_DIR", "/Volumes/ssd/us_stock_data/1s_parquet"))
 
 DATE_RE = re.compile(r"^\d{8}$")
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -68,36 +69,44 @@ def _validate_symbol(s: str) -> None:
 
 
 @lru_cache(maxsize=128)
-def _load_csv(date: str, symbol: str) -> pd.DataFrame:
-    """Load and cache a CSV file.  ~130 MB total for all files in memory."""
+def _load_data(date: str, symbol: str) -> pd.DataFrame:
+    """Load and cache data from local parquet."""
     _validate_date(date)
     _validate_symbol(symbol)
-    csv_path = DATA_DIR / date / f"{symbol}.csv"
-    if not csv_path.exists():
+    year = date[:4]
+    pq_path = PARQUET_DIR / symbol / f"{year}.parquet"
+    if not pq_path.exists():
         raise HTTPException(404, "symbol not found")
-    df = pd.read_csv(csv_path)
-    df["bob"] = pd.to_datetime(df["bob"], utc=True, errors="coerce")
-    df = df.dropna(subset=["bob"]).sort_values("bob").reset_index(drop=True)
-    # epoch seconds for TradingView
+    df = pd.read_parquet(pq_path)
+    start = pd.Timestamp(date, tz="US/Eastern")
+    df = df[(df["bob"] >= start) & (df["bob"] < start + pd.Timedelta(days=1))]
+    if df.empty:
+        raise HTTPException(404, "no data for date")
+    df = df.copy()
+    df["bob"] = df["bob"].dt.tz_convert("UTC")
+    df = df.sort_values("bob").reset_index(drop=True)
     df["time"] = (df["bob"].astype("int64") // 1_000_000_000).astype(int)
     return df
 
 
+_dates_cache: list[str] | None = None
+
+
 def _list_dates() -> list[str]:
-    if not DATA_DIR.exists():
+    """List available dates from AAPL parquet. Cached after first call."""
+    global _dates_cache
+    if _dates_cache is not None:
+        return _dates_cache
+    ref = PARQUET_DIR / "AAPL" / "2026.parquet"
+    if not ref.exists():
         return []
-    return sorted(
-        [p.name for p in DATA_DIR.iterdir() if p.is_dir() and DATE_RE.match(p.name)],
+    df = pd.read_parquet(ref, columns=["bob"])
+    dates = sorted(
+        df["bob"].dt.date.astype(str).str.replace("-", "").unique(),
         reverse=True,
     )
-
-
-def _list_symbols(date: str) -> list[str]:
-    _validate_date(date)
-    date_dir = DATA_DIR / date
-    if not date_dir.exists():
-        raise HTTPException(404, "date not found")
-    return sorted(p.stem for p in date_dir.glob("*.csv"))
+    _dates_cache = list(dates)
+    return _dates_cache
 
 
 def _filter_session(df: pd.DataFrame, session: str) -> pd.DataFrame:
@@ -112,7 +121,6 @@ def _filter_session(df: pd.DataFrame, session: str) -> pd.DataFrame:
     start = h1 * 60 + m1
     end = h2 * 60 + m2
     if end > 24 * 60:
-        # wraps past midnight (afterhours)
         mask = (t >= start) | (t < end - 24 * 60)
     else:
         mask = (t >= start) & (t < end)
@@ -123,7 +131,6 @@ def _aggregate(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
     """Aggregate 1s bars into N-second bars."""
     if resolution <= 1:
         return df
-    # floor time to resolution
     df = df.copy()
     df["time"] = (df["time"] // resolution) * resolution
     clean_cols = (
@@ -223,7 +230,7 @@ def _compute_ma(values: np.ndarray, times: np.ndarray, period: int) -> list[dict
 def _hampel_filter(series: pd.Series, window: int, n_sigma: float = 3.0) -> pd.Series:
     if window <= 0:
         return series
-    k = 1.4826  # scale factor for Gaussian distribution
+    k = 1.4826
     win = window * 2 + 1
     rolling_median = series.rolling(win, center=True).median()
     mad = (series - rolling_median).abs().rolling(win, center=True).median()
@@ -257,17 +264,10 @@ def _apply_spike_filter(df: pd.DataFrame, method: str, window: int) -> pd.DataFr
 def _build_volume_bars(
     times: np.ndarray, opens: np.ndarray, closes: np.ndarray, volumes: np.ndarray
 ) -> list[dict]:
-    """Build volume bars aligned with the aggregated candle resolution."""
     result = []
     for i in range(len(times)):
         color = "#4ade80" if closes[i] >= opens[i] else "#f87171"
-        result.append(
-            {
-                "time": int(times[i]),
-                "value": float(volumes[i]),
-                "color": color,
-            }
-        )
+        result.append({"time": int(times[i]), "value": float(volumes[i]), "color": color})
     return result
 
 
@@ -280,62 +280,41 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-def _quick_summary(csv_path: Path) -> dict | None:
-    """Read first+last line of CSV for fast summary (no full load)."""
-    import csv as csv_mod
-    try:
-        with csv_path.open() as f:
-            reader = csv_mod.reader(f)
-            header = next(reader)
-            first_row = next(reader, None)
-            if not first_row:
-                return None
-        # read last line efficiently
-        with csv_path.open("rb") as f:
-            f.seek(0, 2)
-            pos = f.tell()
-            buf = b""
-            while pos > 0:
-                chunk = min(4096, pos)
-                pos -= chunk
-                f.seek(pos)
-                buf = f.read(chunk) + buf
-                if buf.count(b"\n") > 1:
-                    break
-            lines = buf.strip().split(b"\n")
-            last_line = lines[-1].decode("utf-8", errors="ignore")
-        last_row = next(csv_mod.reader([last_line]))
-        if len(last_row) != len(header):
-            return None
-        h = {k: v for k, v in zip(header, first_row)}
-        t = {k: v for k, v in zip(header, last_row)}
-        first_close = float(h["close"])
-        last_close = float(t["close"])
-        pct = ((last_close - first_close) / first_close * 100) if first_close else 0
-        return {
-            "symbol": csv_path.stem,
-            "close": round(last_close, 2),
-            "change_pct": round(pct, 2),
-            "volume": 0,  # skip full volume sum for speed
-        }
-    except Exception:
-        return None
-
-
 @app.get("/api/dates", response_class=ORJSONResponse)
 def api_dates():
     dates = _list_dates()
-    result = {}
-    for date in dates:
-        symbols = _list_symbols(date)
-        sym_info = []
-        for sym in symbols:
-            csv_path = DATA_DIR / date / f"{sym}.csv"
-            info = _quick_summary(csv_path)
-            if info:
-                sym_info.append(info)
-        result[date] = sym_info
+    result = {date: [] for date in dates}
     return ORJSONResponse({"dates": result})
+
+
+_symbol_cache: list[str] | None = None
+_symbol_cache_time: float = 0
+
+
+def _get_all_symbols() -> list[str]:
+    """Get cached list of all symbols from local parquet directory."""
+    global _symbol_cache, _symbol_cache_time
+    import time
+    now = time.time()
+    if _symbol_cache is not None and now - _symbol_cache_time < 3600:
+        return _symbol_cache
+    if PARQUET_DIR.exists():
+        _symbol_cache = sorted(p.name for p in PARQUET_DIR.iterdir() if p.is_dir())
+    else:
+        _symbol_cache = []
+    _symbol_cache_time = now
+    return _symbol_cache
+
+
+@app.get("/api/search", response_class=ORJSONResponse)
+def api_search(q: str = Query("", min_length=1, max_length=20)):
+    """Search symbols by prefix (case-insensitive)."""
+    q_upper = q.upper()
+    symbols = _get_all_symbols()
+    exact = [s for s in symbols if s.upper() == q_upper]
+    prefix = [s for s in symbols if s.upper().startswith(q_upper) and s.upper() != q_upper]
+    results = (exact + prefix)[:20]
+    return ORJSONResponse({"query": q, "symbols": results})
 
 
 @app.get("/api/price/{date}/{symbol}", response_class=ORJSONResponse)
@@ -345,28 +324,24 @@ def api_price(
     session: str = Query("all"),
     resolution: int = Query(1, ge=1, le=60),
     use_clean: bool = Query(False),
-    spike_filter: str | None = Query(None),
+    spike_filter: Optional[str] = Query(None),
     spike_window: int = Query(3, ge=1, le=21),
 ):
-    df = _load_csv(date, symbol)
+    df = _load_data(date, symbol)
     if df.empty:
         raise HTTPException(404, "no data")
 
-    # filter session
     df = _filter_session(df, session)
     if df.empty:
         raise HTTPException(404, "no data for session")
 
-    # spike filter on 1s data (before aggregation)
     if spike_filter:
         if spike_filter not in {"hampel"}:
             raise HTTPException(400, f"invalid spike_filter: {spike_filter}")
         df = _apply_spike_filter(df, spike_filter, spike_window)
 
-    # aggregate
     df_agg = _aggregate(df, resolution)
 
-    # choose price columns
     if use_clean and "clean_open" in df_agg.columns:
         o_col, h_col, l_col, c_col = "clean_open", "clean_high", "clean_low", "clean_close"
     else:
@@ -378,7 +353,6 @@ def api_price(
     lows = df_agg[l_col].values.astype(float)
     closes = df_agg[c_col].values.astype(float)
 
-    # candlestick data
     candles = []
     for i in range(len(times)):
         candles.append({
@@ -389,24 +363,19 @@ def api_price(
             "close": round(float(closes[i]), 4),
         })
 
-    # amount bars (成交额) aligned with candle resolution
     amounts = df_agg["amount"].values.astype(float)
     amount_bars = _build_volume_bars(times, opens, closes, amounts)
 
-    # VWAP (cumulative, aligned to aggregated resolution)
     vwap = _compute_vwap(df_agg)
 
-    # MAs on close price (all periods)
     mas = {}
     for p in MA_PERIODS:
         mas[str(p)] = _compute_ma(closes, times, p)
 
-    # Amount MA20
     amt_values = np.array([v["value"] for v in amount_bars], dtype=float)
     amt_times = np.array([v["time"] for v in amount_bars], dtype=int)
     amount_ma = _compute_ma(amt_values, amt_times, 20)
 
-    # stats
     first_open = float(opens[0])
     last_close = float(closes[-1])
     change_pct = ((last_close - first_open) / first_open * 100) if first_open else 0
@@ -429,7 +398,6 @@ def api_price(
         "low_time": int(times[low_idx]),
     }
 
-    # market open marker (14:30 UTC = 09:30 ET)
     market_open_time = None
     for t in times:
         ts = pd.Timestamp(int(t), unit="s", tz="UTC")
@@ -460,4 +428,4 @@ def api_price(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

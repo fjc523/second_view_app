@@ -20,7 +20,14 @@
 
 <div class="app-body">
 <div class="sidebar" id="sidebar">
-  <div id="sidebarContent"></div>
+  <div class="search-box">
+    <input type="text" id="symbolSearch" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
+    <div class="search-results" id="searchResults"></div>
+  </div>
+  <div class="date-picker">
+    <label class="date-label-text">Date</label>
+    <select id="datePicker"></select>
+  </div>
 </div>
 
 <div class="main">
@@ -35,10 +42,10 @@
         <button class="btn" data-val="candle">Candle</button>
       </div>
       <div class="btn-group" id="resGroup">
-        <button class="btn active" data-val="1">1s</button>
+        <button class="btn" data-val="1">1s</button>
         <button class="btn" data-val="5">5s</button>
         <button class="btn" data-val="10">10s</button>
-        <button class="btn" data-val="60">1m</button>
+        <button class="btn active" data-val="60">1m</button>
       </div>
       <div class="btn-group" id="sessionGroup">
         <button class="btn active" data-val="all">All</button>

@@ -1,6 +1,8 @@
 export const $ = id => document.getElementById(id);
 
-export const sidebarContent = $('sidebarContent');
+export const symbolSearch = $('symbolSearch');
+export const searchResults = $('searchResults');
+export const datePicker = $('datePicker');
 export const chartEl = $('chart');
 export const loading = $('loading');
 export const maLegend = $('maLegend');
