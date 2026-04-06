@@ -1,6 +1,7 @@
 """second_view – FastAPI backend for 1s stock data visualization."""
 from __future__ import annotations
 
+import json
 import os
 import re
 from functools import lru_cache
@@ -10,7 +11,7 @@ from typing import Optional
 import numpy as np
 import orjson
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +23,9 @@ STATIC_DIR = REPO_ROOT / "static"
 EVENT_LIST_DIR = REPO_ROOT.parent / "exps" / "event_list"
 AUTO_RESEARCH_DIR = REPO_ROOT.parent / "auto_research"
 ALPHA_SECOND_V2_EVENT_DIR = REPO_ROOT.parent / "alpha_second_v2" / "event"
+REPLAY_ROOT = Path(os.environ.get("REPLAY_ROOT", str(REPO_ROOT.parent.parent / "reports")))
+REVIEW_ROOT = REPLAY_ROOT / "_review_marks"
+REVIEW_ROOT.mkdir(parents=True, exist_ok=True)
 
 DATE_RE = re.compile(r"^\d{8}$")
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -671,6 +675,41 @@ def _build_volume_bars(times: np.ndarray, opens: np.ndarray, closes: np.ndarray,
     return result
 
 
+def _replay_run_dir(run_id: str) -> Path:
+    for candidate in REPLAY_ROOT.glob(f"**/{run_id}/visual_replay"):
+        if candidate.is_dir():
+            return candidate
+    raise HTTPException(404, "replay run not found")
+
+
+def _load_replay_csv(replay_dir: Path, date: str, symbol: str) -> pd.DataFrame:
+    csv_path = replay_dir / "second_view_data" / "1s" / date / f"{symbol}.csv"
+    if not csv_path.exists():
+        raise HTTPException(404, "replay csv not found")
+    df = pd.read_csv(csv_path)
+    df["bob"] = pd.to_datetime(df["bob"], utc=True)
+    df = df.sort_values("bob").reset_index(drop=True)
+    df["time"] = _to_epoch_seconds(df["bob"])
+    return df
+
+
+def _review_marks_path(run_id: str) -> Path:
+    return REVIEW_ROOT / f"{run_id}.json"
+
+
+def _load_review_marks(run_id: str) -> dict:
+    path = _review_marks_path(run_id)
+    if not path.exists():
+        return {"run_id": run_id, "marks": {}}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _save_review_marks(run_id: str, payload: dict) -> dict:
+    path = _review_marks_path(run_id)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -727,6 +766,33 @@ def api_search(q: str = Query("", min_length=1, max_length=20)):
     return ORJSONResponse({"query": q, "symbols": results})
 
 
+@app.get("/api/replay/{run_id}", response_class=ORJSONResponse)
+def api_replay(run_id: str):
+    replay_dir = _replay_run_dir(run_id)
+    run_index_path = replay_dir / "run_index.json"
+    events_path = replay_dir / "events" / "events.json"
+    if not run_index_path.exists() or not events_path.exists():
+        raise HTTPException(404, "replay files missing")
+    run_index = json.loads(run_index_path.read_text(encoding="utf-8"))
+    events = json.loads(events_path.read_text(encoding="utf-8")).get("events", [])
+    return ORJSONResponse({"run": run_index, "events": events})
+
+
+@app.get("/api/review/{run_id}", response_class=ORJSONResponse)
+def api_review_marks(run_id: str):
+    _replay_run_dir(run_id)
+    return ORJSONResponse(_load_review_marks(run_id))
+
+
+@app.post("/api/review/{run_id}", response_class=ORJSONResponse)
+def api_save_review_marks(run_id: str, payload: dict = Body(...)):
+    _replay_run_dir(run_id)
+    marks = payload.get("marks") if isinstance(payload, dict) else None
+    if not isinstance(marks, dict):
+        raise HTTPException(400, "invalid review payload")
+    return ORJSONResponse(_save_review_marks(run_id, {"run_id": run_id, "marks": marks}))
+
+
 @app.get("/api/event-lists", response_class=ORJSONResponse)
 def api_event_lists():
     files = _list_event_files()
@@ -751,8 +817,23 @@ def api_price(
     use_clean: bool = Query(False),
     spike_filter: Optional[str] = Query(None),
     spike_window: int = Query(3, ge=1, le=21),
+    replay_run: Optional[str] = Query(None),
 ):
-    df = _load_data(date, symbol)
+    replay_events = []
+    if replay_run:
+        replay_dir = _replay_run_dir(replay_run)
+        events_path = replay_dir / "events" / "events.json"
+        if events_path.exists():
+            replay_events = [
+                event for event in json.loads(events_path.read_text(encoding="utf-8")).get("events", [])
+                if event.get("date") == date and event.get("symbol") == symbol
+            ]
+        try:
+            df = _load_replay_csv(replay_dir, date, symbol)
+        except HTTPException:
+            df = _load_data(date, symbol)
+    else:
+        df = _load_data(date, symbol)
     if df.empty:
         raise HTTPException(404, "no data")
 
@@ -823,6 +904,10 @@ def api_price(
         "last_time": int(times[-1]),
         "high_time": int(times[high_idx]),
         "low_time": int(times[low_idx]),
+        "loaded_high": round(float(highs.max()), 4),
+        "loaded_low": round(float(lows.min()), 4),
+        "loaded_high_time": int(times[high_idx]),
+        "loaded_low_time": int(times[low_idx]),
     }
 
     market_open_time = None
@@ -851,6 +936,7 @@ def api_price(
             "volume_ma": amount_ma,
             "stats": stats,
             "market_open_time": market_open_time,
+            "replay_events": replay_events,
         }
     )
 

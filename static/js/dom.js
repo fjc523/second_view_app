@@ -20,3 +20,5 @@ export const rangeSubLeft = $('rangeSubLeft');
 export const rangeSubRight = $('rangeSubRight');
 export const timelineCanvas = $('timelineCanvas');
 export const clockEl = $('clock');
+export const replayPanel = $('replayPanel');
+export const reviewStatus = $('reviewStatus');

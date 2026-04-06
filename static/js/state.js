@@ -16,4 +16,11 @@ export const state = {
   data: null,
   tz: 'Asia/Shanghai',
   viewStateCache: {},
+  replayRun: null,
+  replayEvents: [],
+  replayEventMap: {},
+  replaySymbols: [],
+  selectedReplayEventId: null,
+  replayFocusNonce: 0,
+  reviewMarks: {},
 };

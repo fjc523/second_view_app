@@ -83,11 +83,12 @@ PARQUET_DIR="/your/parquet/root" uv run python server.py
 
 - **多分辨率 K 线** — 支持 1s / 5s / 10s / 1min 聚合
 - **盘前/盘中/盘后筛选** — All / Pre / Mkt / Ext 一键切换
-- **VWAP / 均线叠加** — 累计 VWAP、MA5 / MA100 / MA200
+- **VWAP / 均线叠加** — 累计 VWAP、MA5 / MA30 / MA60
 - **Clean Price 模式** — 切换原始价格与清洗后的调整价格
 - **蜡烛图 / 折线图切换** — 按 `C`(蜡烛) / `L`(折线) 快捷切换
 - **日期 & 标的导航** — 日期按钮 + 标的条带，显示涨跌幅
 - **时间轴区间选取** — 鼠标拖选时间范围查看区间统计
+- **回测 replay 模式** — 通过 `?replay_run=<run_id>` 读取 Qtrader 导出的回放事件并叠加 BUY / SELL 标记
 - **键盘快捷键** — `←` `→` 切换标的，`F` 适配全屏，`V` VWAP，`M` 均线
 
 ## 项目结构
@@ -107,11 +108,14 @@ static/js/*.js            # 模块化逻辑
 
 | 端点 | 说明 |
 |------|------|
-| `GET /api/dates` | 返回所有可用日期；默认不计算摘要，避免首次加载过慢 |
+| `GET /api/dates` | 返回所有可用日期；可选返回每个标的的摘要信息 |
 | `GET /api/search?q=A` | 按前缀搜索标的 |
 | `GET /api/event-lists` | 返回可用事件列表 |
 | `GET /api/event-lists/{name}` | 返回某个事件列表的事件行 |
-| `GET /api/price/{date}/{symbol}` | 返回 K 线、成交量、VWAP、均线等完整图表数据 |
+| `GET /api/price/{date}/{symbol}` | 返回 K 线、成交量、VWAP、均线等完整图表数据；若带 `replay_run`，则叠加回放事件 |
+| `GET /api/replay/{run_id}` | 返回某次 Qtrader 回测导出的 replay 索引和事件列表 |
+| `GET /api/review/{run_id}` | 返回 replay 审核标记 |
+| `POST /api/review/{run_id}` | 保存 replay 审核标记 |
 
 `/api/dates` 查询参数：
 
@@ -129,3 +133,4 @@ static/js/*.js            # 模块化逻辑
 | `session` | `all` | 盘段筛选：`all` / `premarket` / `market` / `afterhours` |
 | `resolution` | `1` | 时间聚合秒数：`1` / `5` / `10` / `60` |
 | `use_clean` | `false` | 是否使用清洗后的调整价格 |
+| `replay_run` | 空 | 若提供 Qtrader 的 run_id，则按对应 replay 事件叠加买卖标记并限制搜索 symbol 范围 |

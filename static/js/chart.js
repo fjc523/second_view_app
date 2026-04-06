@@ -206,7 +206,6 @@ export function applyBarSpacing() {
   } else {
     minSpacing = 2.2;
   }
-  // Default barSpacing = minBarSpacing so chart starts at maximum zoom-out
   chart.timeScale().applyOptions({
     barSpacing: minSpacing,
     minBarSpacing: minSpacing,
@@ -265,34 +264,32 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
   if (data.market_open_time && data.candles.length > 0) {
     const markerCandle = data.candles.find(c => c.time >= data.market_open_time);
     if (markerCandle) {
-      markers.push({
-        time: markerCandle.time,
-        position: 'belowBar',
-        color: '#f59e0b',
-        shape: 'arrowUp',
-        text: '9:30',
-      });
+      markers.push({ time: markerCandle.time, position: 'belowBar', color: '#f59e0b', shape: 'arrowUp', text: '9:30' });
     }
   }
 
-  if (data.stats && data.stats.high_time) {
-    markers.push({
-      time: data.stats.high_time,
-      position: 'aboveBar',
-      color: '#22c55e',
-      shape: 'circle',
-      text: data.stats.high.toFixed(3),
-    });
+  if (data.stats && data.stats.loaded_high_time) {
+    markers.push({ time: data.stats.loaded_high_time, position: 'aboveBar', color: '#22c55e', shape: 'circle', text: data.stats.loaded_high.toFixed(3) });
   }
 
-  if (data.stats && data.stats.low_time) {
-    markers.push({
-      time: data.stats.low_time,
-      position: 'belowBar',
-      color: '#ef4444',
-      shape: 'circle',
-      text: data.stats.low.toFixed(3),
-    });
+  if (data.stats && data.stats.loaded_low_time) {
+    markers.push({ time: data.stats.loaded_low_time, position: 'belowBar', color: '#ef4444', shape: 'circle', text: data.stats.loaded_low.toFixed(3) });
+  }
+
+  if (Array.isArray(data.replay_events)) {
+    for (const event of data.replay_events) {
+      const time = Math.floor(new Date(event.timestamp).getTime() / 1000);
+      const isSelected = state.selectedReplayEventId === event.event_id;
+      markers.push({
+        time,
+        position: event.event_type === 'buy' ? 'belowBar' : 'aboveBar',
+        color: event.event_type === 'buy' ? '#22c55e' : '#ef4444',
+        shape: event.event_type === 'buy' ? 'arrowUp' : 'arrowDown',
+        text: isSelected
+          ? `★ ${event.event_type.toUpperCase()} ${Number(event.price).toFixed(2)}`
+          : `${event.event_type.toUpperCase()} ${Number(event.price).toFixed(2)}`,
+      });
+    }
   }
 
   if (
@@ -355,10 +352,12 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
 
   updateMALegend({ mas: getLastMAValues(data) });
   updateVolLegend({});
-
   applyBarSpacing();
 
-  const centerLogical = timeToLogical(data, savedCenter);
+  const replayFocus = state.selectedReplayEventId && state.replayEventMap[state.selectedReplayEventId]
+    ? Math.floor(new Date(state.replayEventMap[state.selectedReplayEventId].timestamp).getTime() / 1000)
+    : null;
+  const centerLogical = timeToLogical(data, replayFocus ?? savedCenter);
   const resolution = Number.isFinite(data.resolution) ? data.resolution : state.resolution;
   const eventLogical = (
     state.activeEvent &&
@@ -366,18 +365,17 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
     (state.activeEvent.anchor_marker_date_et || state.activeEvent.event_date_et) === data.date
   ) ? timeToLogical(data, Number(state.activeEvent.anchor_marker_epoch || state.activeEvent.event_epoch)) : null;
 
-  // Compute max zoom-out half-span from chart width and minBarSpacing
   const tsOpts = chart.timeScale().options();
   const minBS = tsOpts.minBarSpacing || 2;
   const maxZoomOutBars = chartEl.clientWidth > 0 ? chartEl.clientWidth / minBS : 600;
   const maxZoomOutHalfSpan = maxZoomOutBars / 2;
 
-  // Compute half-span: prefer saved time span (converted to logical), fall back to max zoom-out
   let halfSpan = null;
-  if (Number.isFinite(savedTimeSpan) && savedTimeSpan > 0 && Number.isFinite(resolution) && resolution > 0) {
+  if (replayFocus != null && Number.isFinite(resolution) && resolution > 0) {
+    halfSpan = Math.max(30, Math.ceil(180 / resolution));
+  } else if (Number.isFinite(savedTimeSpan) && savedTimeSpan > 0 && Number.isFinite(resolution) && resolution > 0) {
     halfSpan = savedTimeSpan / (2 * resolution);
   }
-  // Ensure at least max zoom-out span
   if (halfSpan == null || !Number.isFinite(halfSpan) || halfSpan <= 0) {
     halfSpan = maxZoomOutHalfSpan;
   } else if (halfSpan < maxZoomOutHalfSpan) {
@@ -397,7 +395,6 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
       to: centerLogical + halfSpan,
     });
   } else {
-    // Fallback: show last N bars at max zoom-out
     const totalBars = data.candles ? data.candles.length : 0;
     chart.timeScale().setVisibleLogicalRange({
       from: totalBars - maxZoomOutBars,

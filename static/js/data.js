@@ -7,6 +7,17 @@ import { updateTimeline } from './timeline.js';
 
 let prevDate = null;
 let prevSymbol = null;
+let prevReplayFocusNonce = 0;
+
+function getEffectiveSymbol() {
+  if (state.currentSymbol !== 'ALL') return state.currentSymbol;
+  const selected = state.selectedReplayEventId ? state.replayEventMap[state.selectedReplayEventId] : null;
+  if (selected && selected.date === state.currentDate) {
+    return selected.symbol;
+  }
+  const firstEventForDate = state.replayEvents.find(event => event.date === state.currentDate);
+  return firstEventForDate ? firstEventForDate.symbol : null;
+}
 
 function getViewState() {
   const chart = getChart();
@@ -42,7 +53,6 @@ function getViewState() {
 
   if (centerTime == null || !Number.isFinite(centerTime)) return null;
 
-  // Capture zoom level as time span (resolution-independent)
   let visibleTimeSpan = null;
   const logicalRange = timeScale.getVisibleLogicalRange();
   if (logicalRange && Number.isFinite(logicalRange.from) && Number.isFinite(logicalRange.to)) {
@@ -59,27 +69,28 @@ function getViewState() {
 
 export async function loadChart() {
   if (!state.currentDate || !state.currentSymbol) return;
+  const effectiveSymbol = getEffectiveSymbol();
+  if (!effectiveSymbol) return;
   loading.classList.remove('hidden');
 
   const viewState = getViewState();
   const liveCenter = viewState ? viewState.centerTime : null;
 
-  // Save current view state under previous symbol's key
   if (prevDate && prevSymbol && viewState) {
     state.viewStateCache[`${prevDate}/${prevSymbol}`] = viewState;
   }
 
-  // Determine which center to use
-  const dateOrSymbolChanged = state.currentDate !== prevDate || state.currentSymbol !== prevSymbol;
-  const cacheKey = `${state.currentDate}/${state.currentSymbol}`;
+  const dateOrSymbolChanged = state.currentDate !== prevDate || effectiveSymbol !== prevSymbol;
+  const replayFocusChanged = state.replayFocusNonce !== prevReplayFocusNonce;
+  const cacheKey = `${state.currentDate}/${effectiveSymbol}`;
   const cached = state.viewStateCache[cacheKey];
-  let savedCenter = (dateOrSymbolChanged && cached) ? cached.centerTime : liveCenter;
+  let savedCenter = replayFocusChanged ? null : ((dateOrSymbolChanged && cached) ? cached.centerTime : liveCenter);
   const liveTimeSpan = viewState ? viewState.visibleTimeSpan : null;
-  let savedTimeSpan = (dateOrSymbolChanged && cached) ? cached.visibleTimeSpan : liveTimeSpan;
+  let savedTimeSpan = replayFocusChanged ? null : ((dateOrSymbolChanged && cached) ? cached.visibleTimeSpan : liveTimeSpan);
 
   if (
     state.activeEvent &&
-    state.activeEvent.symbol === state.currentSymbol &&
+    state.activeEvent.symbol === effectiveSymbol &&
     (state.activeEvent.anchor_marker_date_et || state.activeEvent.event_date_et) === state.currentDate
   ) {
     savedCenter = state.activeEvent.anchor_marker_epoch || state.activeEvent.event_epoch;
@@ -94,9 +105,9 @@ export async function loadChart() {
     }
   }
 
-  // Update previous tracking
   prevDate = state.currentDate;
-  prevSymbol = state.currentSymbol;
+  prevSymbol = effectiveSymbol;
+  prevReplayFocusNonce = state.replayFocusNonce;
 
   const params = new URLSearchParams({
     session: state.session,
@@ -107,9 +118,12 @@ export async function loadChart() {
     params.set('spike_filter', 'hampel');
     params.set('spike_window', 3);
   }
+  if (state.replayRun) {
+    params.set('replay_run', state.replayRun);
+  }
 
   try {
-    const data = await fetchJSON(`/api/price/${state.currentDate}/${state.currentSymbol}?${params}`);
+    const data = await fetchJSON(`/api/price/${state.currentDate}/${effectiveSymbol}?${params}`);
     state.data = data;
     renderChart(data, savedCenter, savedTimeSpan);
     updateTimeline();
