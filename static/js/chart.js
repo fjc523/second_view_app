@@ -202,10 +202,7 @@ export function applyBarSpacing() {
     spacing = 8;
     minSpacing = 2.2;
   }
-  chart.timeScale().applyOptions({
-    barSpacing: spacing,
-    minBarSpacing: minSpacing,
-  });
+  chart.timeScale().applyOptions({ barSpacing: spacing, minBarSpacing: minSpacing });
 }
 
 export function renderChart(data, savedCenter, savedTimeSpan) {
@@ -260,34 +257,32 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
   if (data.market_open_time && data.candles.length > 0) {
     const markerCandle = data.candles.find(c => c.time >= data.market_open_time);
     if (markerCandle) {
-      markers.push({
-        time: markerCandle.time,
-        position: 'belowBar',
-        color: '#f59e0b',
-        shape: 'arrowUp',
-        text: '9:30',
-      });
+      markers.push({ time: markerCandle.time, position: 'belowBar', color: '#f59e0b', shape: 'arrowUp', text: '9:30' });
     }
   }
 
-  if (data.stats && data.stats.high_time) {
-    markers.push({
-      time: data.stats.high_time,
-      position: 'aboveBar',
-      color: '#22c55e',
-      shape: 'circle',
-      text: data.stats.high.toFixed(3),
-    });
+  if (data.stats && data.stats.loaded_high_time) {
+    markers.push({ time: data.stats.loaded_high_time, position: 'aboveBar', color: '#22c55e', shape: 'circle', text: data.stats.loaded_high.toFixed(3) });
   }
 
-  if (data.stats && data.stats.low_time) {
-    markers.push({
-      time: data.stats.low_time,
-      position: 'belowBar',
-      color: '#ef4444',
-      shape: 'circle',
-      text: data.stats.low.toFixed(3),
-    });
+  if (data.stats && data.stats.loaded_low_time) {
+    markers.push({ time: data.stats.loaded_low_time, position: 'belowBar', color: '#ef4444', shape: 'circle', text: data.stats.loaded_low.toFixed(3) });
+  }
+
+  if (Array.isArray(data.replay_events)) {
+    for (const event of data.replay_events) {
+      const time = Math.floor(new Date(event.timestamp).getTime() / 1000);
+      const isSelected = state.selectedReplayEventId === event.event_id;
+      markers.push({
+        time,
+        position: event.event_type === 'buy' ? 'belowBar' : 'aboveBar',
+        color: event.event_type === 'buy' ? '#22c55e' : '#ef4444',
+        shape: event.event_type === 'buy' ? 'arrowUp' : 'arrowDown',
+        text: isSelected
+          ? `★ ${event.event_type.toUpperCase()} ${Number(event.price).toFixed(2)}`
+          : `${event.event_type.toUpperCase()} ${Number(event.price).toFixed(2)}`,
+      });
+    }
   }
 
   markers.sort((a, b) => a.time - b.time);
@@ -297,29 +292,27 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
 
   updateMALegend({ mas: getLastMAValues(data) });
   updateVolLegend({});
-
   applyBarSpacing();
 
-  const centerLogical = timeToLogical(data, savedCenter);
+  const replayFocus = state.selectedReplayEventId && state.replayEventMap[state.selectedReplayEventId]
+    ? Math.floor(new Date(state.replayEventMap[state.selectedReplayEventId].timestamp).getTime() / 1000)
+    : null;
+  const centerLogical = timeToLogical(data, replayFocus ?? savedCenter);
   const resolution = Number.isFinite(data.resolution) ? data.resolution : state.resolution;
 
-  // Compute half-span: prefer saved time span (converted to logical), fall back to current range
   let halfSpan = null;
-  if (Number.isFinite(savedTimeSpan) && savedTimeSpan > 0 && Number.isFinite(resolution) && resolution > 0) {
+  if (replayFocus != null && Number.isFinite(resolution) && resolution > 0) {
+    halfSpan = Math.max(30, Math.ceil(180 / resolution));
+  } else if (Number.isFinite(savedTimeSpan) && savedTimeSpan > 0 && Number.isFinite(resolution) && resolution > 0) {
     halfSpan = savedTimeSpan / (2 * resolution);
   }
   if (halfSpan == null || !Number.isFinite(halfSpan) || halfSpan <= 0) {
-    const logicalRange = chart.timeScale().getVisibleLogicalRange();
-    if (logicalRange && Number.isFinite(logicalRange.from) && Number.isFinite(logicalRange.to)) {
-      halfSpan = (logicalRange.to - logicalRange.from) / 2;
-    }
+    chart.timeScale().fitContent();
+    return;
   }
 
   if (Number.isFinite(centerLogical) && Number.isFinite(halfSpan) && halfSpan > 0) {
-    chart.timeScale().setVisibleLogicalRange({
-      from: centerLogical - halfSpan,
-      to: centerLogical + halfSpan,
-    });
+    chart.timeScale().setVisibleLogicalRange({ from: centerLogical - halfSpan, to: centerLogical + halfSpan });
   } else {
     chart.timeScale().fitContent();
   }

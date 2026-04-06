@@ -1,41 +1,45 @@
-"""second_view – FastAPI backend for 1s stock data visualization."""
 from __future__ import annotations
 
+import json
 import os
 import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 import numpy as np
-import orjson
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 
+try:
+    import orjson  # type: ignore
+except ImportError:  # pragma: no cover
+    orjson = None
+
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
-PARQUET_DIR = Path(os.environ.get("PARQUET_DIR", "/Volumes/ssd/us_stock_data/1s_parquet"))
+PARQUET_DIR = Path(os.environ.get("PARQUET_DIR", str(APP_DIR.parent.parent / "us_stocks_data" / "1s_parquet")))
+REPLAY_ROOT = Path(os.environ.get("REPLAY_ROOT", str(APP_DIR.parent.parent / "reports")))
 
 DATE_RE = re.compile(r"^\d{8}$")
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
-MA_PERIODS = [5, 100, 200]
+MA_PERIODS = [5, 30, 60]
 
-# ET session boundaries (in UTC hours)
 SESSION_BOUNDS = {
-    "premarket": (9, 0, 14, 30),   # 04:00–09:30 ET → 09:00–14:30 UTC
-    "market":    (14, 30, 21, 0),   # 09:30–16:00 ET → 14:30–21:00 UTC
-    "afterhours":(21, 0, 25, 0),    # 16:00–20:00 ET → 21:00–01:00+1 UTC (25 = next day 01)
+    "premarket": (9, 0, 14, 30),
+    "market": (14, 30, 21, 0),
+    "afterhours": (21, 0, 25, 0),
 }
 
-app = FastAPI(title="second_view", version="2.0.0")
+app = FastAPI(title="second_view", version="2.1.1")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-
 from starlette.middleware.base import BaseHTTPMiddleware
+
 
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -44,6 +48,7 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
 
+
 app.add_middleware(NoCacheStaticMiddleware)
 
 
@@ -51,12 +56,10 @@ class ORJSONResponse(Response):
     media_type = "application/json"
 
     def render(self, content) -> bytes:
-        return orjson.dumps(content, option=orjson.OPT_SERIALIZE_NUMPY)
+        if orjson is not None:
+            return orjson.dumps(content, option=orjson.OPT_SERIALIZE_NUMPY)
+        return json.dumps(content, ensure_ascii=False, default=str).encode("utf-8")
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _validate_date(d: str) -> None:
     if not DATE_RE.match(d):
@@ -70,7 +73,6 @@ def _validate_symbol(s: str) -> None:
 
 @lru_cache(maxsize=128)
 def _load_data(date: str, symbol: str) -> pd.DataFrame:
-    """Load and cache data from local parquet."""
     _validate_date(date)
     _validate_symbol(symbol)
     year = date[:4]
@@ -93,18 +95,14 @@ _dates_cache: list[str] | None = None
 
 
 def _list_dates() -> list[str]:
-    """List available dates from AAPL parquet. Cached after first call."""
     global _dates_cache
     if _dates_cache is not None:
         return _dates_cache
-    ref = PARQUET_DIR / "AAPL" / "2026.parquet"
+    ref = PARQUET_DIR / "AAPL" / "2025.parquet"
     if not ref.exists():
         return []
     df = pd.read_parquet(ref, columns=["bob"])
-    dates = sorted(
-        df["bob"].dt.date.astype(str).str.replace("-", "").unique(),
-        reverse=True,
-    )
+    dates = sorted(df["bob"].dt.date.astype(str).str.replace("-", "").unique(), reverse=True)
     _dates_cache = list(dates)
     return _dates_cache
 
@@ -128,24 +126,20 @@ def _filter_session(df: pd.DataFrame, session: str) -> pd.DataFrame:
 
 
 def _aggregate(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
-    """Aggregate 1s bars into N-second bars."""
     if resolution <= 1:
         return df
     df = df.copy()
     df["time"] = (df["time"] // resolution) * resolution
-    clean_cols = (
-        ["clean_open", "clean_high", "clean_low", "clean_close"]
-        if "clean_open" in df.columns else []
-    )
-
-    agg = {}
-    agg["open"] = ("open", "first")
-    agg["high"] = ("high", "max")
-    agg["low"] = ("low", "min")
-    agg["close"] = ("close", "last")
-    agg["volume"] = ("volume", "sum")
-    agg["amount"] = ("amount", "sum")
-    agg["tick_count"] = ("tick_count", "sum")
+    clean_cols = ["clean_open", "clean_high", "clean_low", "clean_close"] if "clean_open" in df.columns else []
+    agg = {
+        "open": ("open", "first"),
+        "high": ("high", "max"),
+        "low": ("low", "min"),
+        "close": ("close", "last"),
+        "volume": ("volume", "sum"),
+        "amount": ("amount", "sum"),
+        "tick_count": ("tick_count", "sum"),
+    }
     for c in clean_cols:
         if c == "clean_open":
             agg[c] = (c, "first")
@@ -155,13 +149,11 @@ def _aggregate(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
             agg[c] = (c, "min")
         elif c == "clean_close":
             agg[c] = (c, "last")
-
     grouped = df.groupby("time", sort=True).agg(**agg).reset_index()
     return _fill_time_gaps(grouped, resolution)
 
 
 def _fill_time_gaps(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
-    """Fill missing time buckets so bars render without gaps."""
     if df.empty:
         return df
     times = df["time"].values
@@ -170,7 +162,6 @@ def _fill_time_gaps(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
     full_times = np.arange(times.min(), times.max() + resolution, resolution, dtype=int)
     if len(full_times) == len(times):
         return df
-
     df = df.set_index("time").reindex(full_times)
 
     def _fill_ohlc(prefix: str = "") -> None:
@@ -191,16 +182,13 @@ def _fill_time_gaps(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
     _fill_ohlc("")
     if "clean_close" in df.columns:
         _fill_ohlc("clean_")
-
     for col in ("volume", "amount", "tick_count"):
         if col in df.columns:
             df[col] = df[col].fillna(0)
-
     return df.reset_index().rename(columns={"index": "time"})
 
 
 def _compute_vwap(df: pd.DataFrame) -> list[dict]:
-    """Cumulative VWAP = cumsum(amount) / cumsum(volume)."""
     vol = df["volume"].values.astype(float)
     amt = df["amount"].values.astype(float)
     cum_vol = np.cumsum(vol)
@@ -216,7 +204,6 @@ def _compute_vwap(df: pd.DataFrame) -> list[dict]:
 
 
 def _compute_ma(values: np.ndarray, times: np.ndarray, period: int) -> list[dict]:
-    """Simple moving average."""
     if len(values) < period:
         return []
     ma = pd.Series(values).rolling(period).mean().values
@@ -261,9 +248,7 @@ def _apply_spike_filter(df: pd.DataFrame, method: str, window: int) -> pd.DataFr
     return df
 
 
-def _build_volume_bars(
-    times: np.ndarray, opens: np.ndarray, closes: np.ndarray, volumes: np.ndarray
-) -> list[dict]:
+def _build_volume_bars(times: np.ndarray, opens: np.ndarray, closes: np.ndarray, volumes: np.ndarray) -> list[dict]:
     result = []
     for i in range(len(times)):
         color = "#4ade80" if closes[i] >= opens[i] else "#f87171"
@@ -271,9 +256,23 @@ def _build_volume_bars(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+def _replay_run_dir(run_id: str) -> Path:
+    for candidate in REPLAY_ROOT.glob(f"**/{run_id}/visual_replay"):
+        if candidate.is_dir():
+            return candidate
+    raise HTTPException(404, "replay run not found")
+
+
+def _load_replay_csv(replay_dir: Path, date: str, symbol: str) -> pd.DataFrame:
+    csv_path = replay_dir / "second_view_data" / "1s" / date / f"{symbol}.csv"
+    if not csv_path.exists():
+        raise HTTPException(404, "replay csv not found")
+    df = pd.read_csv(csv_path)
+    df["bob"] = pd.to_datetime(df["bob"], utc=True)
+    df = df.sort_values("bob").reset_index(drop=True)
+    df["time"] = (df["bob"].astype("int64") // 1_000_000_000).astype(int)
+    return df
+
 
 @app.get("/")
 def index():
@@ -292,7 +291,6 @@ _symbol_cache_time: float = 0
 
 
 def _get_all_symbols() -> list[str]:
-    """Get cached list of all symbols from local parquet directory."""
     global _symbol_cache, _symbol_cache_time
     import time
     now = time.time()
@@ -308,13 +306,24 @@ def _get_all_symbols() -> list[str]:
 
 @app.get("/api/search", response_class=ORJSONResponse)
 def api_search(q: str = Query("", min_length=1, max_length=20)):
-    """Search symbols by prefix (case-insensitive)."""
     q_upper = q.upper()
     symbols = _get_all_symbols()
     exact = [s for s in symbols if s.upper() == q_upper]
     prefix = [s for s in symbols if s.upper().startswith(q_upper) and s.upper() != q_upper]
     results = (exact + prefix)[:20]
     return ORJSONResponse({"query": q, "symbols": results})
+
+
+@app.get("/api/replay/{run_id}", response_class=ORJSONResponse)
+def api_replay(run_id: str):
+    replay_dir = _replay_run_dir(run_id)
+    run_index_path = replay_dir / "run_index.json"
+    events_path = replay_dir / "events" / "events.json"
+    if not run_index_path.exists() or not events_path.exists():
+        raise HTTPException(404, "replay files missing")
+    run_index = json.loads(run_index_path.read_text(encoding="utf-8"))
+    events = json.loads(events_path.read_text(encoding="utf-8")).get("events", [])
+    return ORJSONResponse({"run": run_index, "events": events})
 
 
 @app.get("/api/price/{date}/{symbol}", response_class=ORJSONResponse)
@@ -326,8 +335,23 @@ def api_price(
     use_clean: bool = Query(False),
     spike_filter: Optional[str] = Query(None),
     spike_window: int = Query(3, ge=1, le=21),
+    replay_run: Optional[str] = Query(None),
 ):
-    df = _load_data(date, symbol)
+    replay_events = []
+    if replay_run:
+        replay_dir = _replay_run_dir(replay_run)
+        events_path = replay_dir / "events" / "events.json"
+        if events_path.exists():
+            replay_events = [
+                event for event in json.loads(events_path.read_text(encoding="utf-8")).get("events", [])
+                if event.get("date") == date and event.get("symbol") == symbol
+            ]
+        try:
+            df = _load_replay_csv(replay_dir, date, symbol)
+        except HTTPException:
+            df = _load_data(date, symbol)
+    else:
+        df = _load_data(date, symbol)
     if df.empty:
         raise HTTPException(404, "no data")
 
@@ -353,25 +377,18 @@ def api_price(
     lows = df_agg[l_col].values.astype(float)
     closes = df_agg[c_col].values.astype(float)
 
-    candles = []
-    for i in range(len(times)):
-        candles.append({
-            "time": int(times[i]),
-            "open": round(float(opens[i]), 4),
-            "high": round(float(highs[i]), 4),
-            "low": round(float(lows[i]), 4),
-            "close": round(float(closes[i]), 4),
-        })
+    candles = [{
+        "time": int(times[i]),
+        "open": round(float(opens[i]), 4),
+        "high": round(float(highs[i]), 4),
+        "low": round(float(lows[i]), 4),
+        "close": round(float(closes[i]), 4),
+    } for i in range(len(times))]
 
     amounts = df_agg["amount"].values.astype(float)
     amount_bars = _build_volume_bars(times, opens, closes, amounts)
-
     vwap = _compute_vwap(df_agg)
-
-    mas = {}
-    for p in MA_PERIODS:
-        mas[str(p)] = _compute_ma(closes, times, p)
-
+    mas = {str(p): _compute_ma(closes, times, p) for p in MA_PERIODS}
     amt_values = np.array([v["value"] for v in amount_bars], dtype=float)
     amt_times = np.array([v["time"] for v in amount_bars], dtype=int)
     amount_ma = _compute_ma(amt_values, amt_times, 20)
@@ -379,10 +396,8 @@ def api_price(
     first_open = float(opens[0])
     last_close = float(closes[-1])
     change_pct = ((last_close - first_open) / first_open * 100) if first_open else 0
-
     high_idx = int(np.argmax(highs))
     low_idx = int(np.argmin(lows))
-
     stats = {
         "open": round(first_open, 4),
         "high": round(float(highs.max()), 4),
@@ -396,6 +411,10 @@ def api_price(
         "last_time": int(times[-1]),
         "high_time": int(times[high_idx]),
         "low_time": int(times[low_idx]),
+        "loaded_high": round(float(highs.max()), 4),
+        "loaded_low": round(float(lows.min()), 4),
+        "loaded_high_time": int(times[high_idx]),
+        "loaded_low_time": int(times[low_idx]),
     }
 
     market_open_time = None
@@ -423,6 +442,7 @@ def api_price(
         "volume_ma": amount_ma,
         "stats": stats,
         "market_open_time": market_open_time,
+        "replay_events": replay_events,
     })
 
 

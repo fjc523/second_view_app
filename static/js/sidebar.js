@@ -1,20 +1,78 @@
 import { state } from './state.js';
-import { symbolSearch, searchResults } from './dom.js';
 import { loadChart } from './data.js';
 import { fetchJSON } from './api.js';
+import { replayPanel, symbolSearch, searchResults } from './dom.js';
 
 let searchTimer = null;
 let highlightIdx = -1;
 let currentResults = [];
 
-export function selectSymbol(symbol) {
-  state.currentSymbol = symbol;
-  hideSearch();
-  symbolSearch.value = symbol;
+function selectReplayEvent(eventId) {
+  state.selectedReplayEventId = eventId;
+  state.replayFocusNonce += 1;
+  renderReplayPanelForSymbol();
   loadChart();
 }
 
-// Search functionality
+function formatPercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return `${(Number(value) * 100).toFixed(2)}%`;
+}
+
+function renderReplayPanelForSymbol() {
+  if (!state.replayRun || !replayPanel) return;
+  const currentEvents = state.replayEvents.filter(
+    event => event.date === state.currentDate && event.symbol === state.currentSymbol,
+  );
+  const items = currentEvents.map(event => {
+    const dt = new Date(event.timestamp).toLocaleString('en-US', {
+      timeZone: state.tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const activeClass = event.event_id === state.selectedReplayEventId ? ' replay-item-active' : '';
+    return `
+      <div class="replay-item${activeClass}" data-event-id="${event.event_id}">
+        <div class="replay-item-head replay-${event.event_type}">${event.event_type.toUpperCase()} · ${dt}</div>
+        <div class="replay-item-meta">price=${Number(event.price).toFixed(4)} qty=${event.quantity}</div>
+        <div class="replay-item-meta">weight ${formatPercent(event.target_weight_before)} → ${formatPercent(event.target_weight_after)}</div>
+        <div class="replay-item-meta">contribution=${formatPercent(event.contribution_pct)}</div>
+        <div class="replay-item-meta replay-reason">reason=${event.reason}</div>
+      </div>
+    `;
+  }).join('');
+  replayPanel.innerHTML = `
+    <div class="replay-title">Replay Run</div>
+    <div class="replay-run-id">${state.replayRun}</div>
+    <div class="replay-count">当前标的事件数：${currentEvents.length}</div>
+    ${items || '<div class="replay-empty">当前 date/symbol 无回放事件</div>'}
+  `;
+  replayPanel.querySelectorAll('.replay-item').forEach(el => {
+    el.addEventListener('click', () => selectReplayEvent(el.dataset.eventId));
+  });
+}
+
+export function refreshReplayPanel() {
+  renderReplayPanelForSymbol();
+}
+
+export function selectSymbol(symbol) {
+  state.currentSymbol = symbol;
+  const firstForSymbol = state.replayEvents.find(
+    event => event.date === state.currentDate && event.symbol === symbol,
+  );
+  if (firstForSymbol) {
+    state.selectedReplayEventId = firstForSymbol.event_id;
+    state.replayFocusNonce += 1;
+  }
+  hideSearch();
+  symbolSearch.value = symbol;
+  renderReplayPanelForSymbol();
+  loadChart();
+}
+
 export function initSearch() {
   symbolSearch.addEventListener('input', () => {
     const q = symbolSearch.value.trim();
@@ -64,6 +122,13 @@ export function initSearch() {
 
 async function doSearch(query) {
   try {
+    if (state.replayRun) {
+      const qUpper = query.toUpperCase();
+      currentResults = (state.replaySymbols || []).filter(sym => sym.toUpperCase().includes(qUpper));
+      highlightIdx = -1;
+      renderSearchResults(query);
+      return;
+    }
     const resp = await fetchJSON(`/api/search?q=${encodeURIComponent(query)}`);
     currentResults = resp.symbols;
     highlightIdx = -1;

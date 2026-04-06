@@ -7,6 +7,7 @@ import { updateTimeline } from './timeline.js';
 
 let prevDate = null;
 let prevSymbol = null;
+let prevReplayFocusNonce = 0;
 
 function getViewState() {
   const chart = getChart();
@@ -42,7 +43,6 @@ function getViewState() {
 
   if (centerTime == null || !Number.isFinite(centerTime)) return null;
 
-  // Capture zoom level as time span (resolution-independent)
   let visibleTimeSpan = null;
   const logicalRange = timeScale.getVisibleLogicalRange();
   if (logicalRange && Number.isFinite(logicalRange.from) && Number.isFinite(logicalRange.to)) {
@@ -64,22 +64,21 @@ export async function loadChart() {
   const viewState = getViewState();
   const liveCenter = viewState ? viewState.centerTime : null;
 
-  // Save current view state under previous symbol's key
   if (prevDate && prevSymbol && viewState) {
     state.viewStateCache[`${prevDate}/${prevSymbol}`] = viewState;
   }
 
-  // Determine which center to use
   const dateOrSymbolChanged = state.currentDate !== prevDate || state.currentSymbol !== prevSymbol;
+  const replayFocusChanged = state.replayFocusNonce !== prevReplayFocusNonce;
   const cacheKey = `${state.currentDate}/${state.currentSymbol}`;
   const cached = state.viewStateCache[cacheKey];
-  const savedCenter = (dateOrSymbolChanged && cached) ? cached.centerTime : liveCenter;
+  const savedCenter = replayFocusChanged ? null : ((dateOrSymbolChanged && cached) ? cached.centerTime : liveCenter);
   const liveTimeSpan = viewState ? viewState.visibleTimeSpan : null;
-  const savedTimeSpan = (dateOrSymbolChanged && cached) ? cached.visibleTimeSpan : liveTimeSpan;
+  const savedTimeSpan = replayFocusChanged ? null : ((dateOrSymbolChanged && cached) ? cached.visibleTimeSpan : liveTimeSpan);
 
-  // Update previous tracking
   prevDate = state.currentDate;
   prevSymbol = state.currentSymbol;
+  prevReplayFocusNonce = state.replayFocusNonce;
 
   const params = new URLSearchParams({
     session: state.session,
@@ -89,6 +88,9 @@ export async function loadChart() {
   if (state.spikeFilter) {
     params.set('spike_filter', 'hampel');
     params.set('spike_window', 3);
+  }
+  if (state.replayRun) {
+    params.set('replay_run', state.replayRun);
   }
 
   try {

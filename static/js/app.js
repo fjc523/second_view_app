@@ -1,6 +1,6 @@
 import { fetchJSON } from './api.js';
 import { state } from './state.js';
-import { selectSymbol, initSearch } from './sidebar.js';
+import { selectSymbol, initSearch, refreshReplayPanel } from './sidebar.js';
 import { initControls } from './controls.js';
 import { initRangeSelection } from './range.js';
 import { initTimeline } from './timeline.js';
@@ -8,17 +8,37 @@ import { updateClock } from './clock.js';
 import { datePicker } from './dom.js';
 import { loadChart } from './data.js';
 
+function getReplayRunFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('replay_run');
+}
+
+async function initReplay() {
+  const replayRun = getReplayRunFromURL();
+  if (!replayRun) return;
+  try {
+    const replay = await fetchJSON(`/api/replay/${replayRun}`);
+    state.replayRun = replayRun;
+    state.replayEvents = replay.events || [];
+    state.replayEventMap = Object.fromEntries((state.replayEvents || []).map(event => [event.event_id, event]));
+    state.replaySymbols = [...new Set((state.replayEvents || []).map(event => event.symbol))].sort();
+  } catch (e) {
+    console.error('replay init error', e);
+  }
+}
+
 async function initApp() {
   updateClock();
   setInterval(updateClock, 1000);
   initSearch();
+  await initReplay();
   try {
     const resp = await fetchJSON('/api/dates');
     state.dates = resp.dates;
-    const dateKeys = Object.keys(state.dates).sort().reverse();
+    const replayDates = [...new Set(state.replayEvents.map(event => event.date))];
+    const dateKeys = (state.replayRun ? replayDates : Object.keys(state.dates)).sort().reverse();
     if (dateKeys.length === 0) return;
 
-    // Populate date picker
     dateKeys.forEach(d => {
       const opt = document.createElement('option');
       opt.value = d;
@@ -28,14 +48,32 @@ async function initApp() {
 
     datePicker.addEventListener('change', () => {
       state.currentDate = datePicker.value;
+      if (state.replayRun) {
+        const firstEventForDate = state.replayEvents.find(
+          event => event.date === state.currentDate && event.symbol === state.currentSymbol,
+        ) || state.replayEvents.find(event => event.date === state.currentDate);
+        if (firstEventForDate) {
+          state.currentSymbol = firstEventForDate.symbol;
+          state.selectedReplayEventId = firstEventForDate.event_id;
+          state.replayFocusNonce += 1;
+          symbolSearch.value = state.currentSymbol;
+        }
+      }
+      refreshReplayPanel();
       if (state.currentSymbol) {
         loadChart();
       }
     });
 
-    // Default: most recent date + AAPL
     state.currentDate = dateKeys[0];
-    state.currentSymbol = 'AAPL';
+    if (state.replayRun && state.replayEvents.length > 0) {
+      const firstEvent = state.replayEvents.find(event => event.date === state.currentDate) || state.replayEvents[0];
+      state.currentSymbol = firstEvent.symbol;
+      state.selectedReplayEventId = firstEvent.event_id;
+    } else {
+      state.currentSymbol = 'AAPL';
+    }
+    refreshReplayPanel();
     loadChart();
   } catch (e) {
     console.error('init error', e);
