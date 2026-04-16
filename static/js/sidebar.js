@@ -13,11 +13,14 @@ function currentDateEvents() {
   return state.replayEvents.filter(event => event.date === state.currentDate);
 }
 
-function currentVisibleBuys() {
-  const filtered = state.currentSymbol === 'ALL'
+function visibleEvents() {
+  return state.currentSymbol === 'ALL'
     ? currentDateEvents()
     : currentDateEvents().filter(event => event.symbol === state.currentSymbol);
-  return filtered.filter(event => event.event_type === 'buy');
+}
+
+function currentVisibleBuys() {
+  return visibleEvents().filter(event => event.event_type === 'buy');
 }
 
 function linkedReviewIds(eventId) {
