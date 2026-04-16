@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import Optional
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
+
+REVIEW_ROOT = REPLAY_ROOT / "_review_marks"
+REVIEW_ROOT.mkdir(parents=True, exist_ok=True)
 
 try:
     import orjson  # type: ignore
@@ -272,6 +275,38 @@ def _load_replay_csv(replay_dir: Path, date: str, symbol: str) -> pd.DataFrame:
     df = df.sort_values("bob").reset_index(drop=True)
     df["time"] = (df["bob"].astype("int64") // 1_000_000_000).astype(int)
     return df
+
+
+def _review_marks_path(run_id: str) -> Path:
+    return REVIEW_ROOT / f"{run_id}.json"
+
+
+def _load_review_marks(run_id: str) -> dict:
+    path = _review_marks_path(run_id)
+    if not path.exists():
+        return {"run_id": run_id, "marks": {}}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _save_review_marks(run_id: str, payload: dict) -> dict:
+    path = _review_marks_path(run_id)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
+@app.get("/api/review/{run_id}", response_class=ORJSONResponse)
+def api_review_marks(run_id: str):
+    _replay_run_dir(run_id)
+    return ORJSONResponse(_load_review_marks(run_id))
+
+
+@app.post("/api/review/{run_id}", response_class=ORJSONResponse)
+def api_save_review_marks(run_id: str, payload: dict = Body(...)):
+    _replay_run_dir(run_id)
+    marks = payload.get("marks") if isinstance(payload, dict) else None
+    if not isinstance(marks, dict):
+        raise HTTPException(400, "invalid review payload")
+    return ORJSONResponse(_save_review_marks(run_id, {"run_id": run_id, "marks": marks}))
 
 
 @app.get("/")

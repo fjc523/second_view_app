@@ -40,6 +40,8 @@
   .date-label-text{color:var(--text3);font-size:11px;font-weight:600;white-space:nowrap}
   .date-picker select{flex:1;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:inherit;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7382'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
   .date-picker select:focus{border-color:var(--accent)}
+  .review-status{margin-bottom:10px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-md);font-size:11px;color:var(--text2);line-height:1.5}
+  .review-status strong{color:var(--text)}
   .replay-panel{margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-md)}
   .replay-title{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
   .replay-run-id{font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;word-break:break-all}

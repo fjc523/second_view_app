@@ -5,7 +5,7 @@ import { initControls } from './controls.js';
 import { initRangeSelection } from './range.js';
 import { initTimeline } from './timeline.js';
 import { updateClock } from './clock.js';
-import { datePicker } from './dom.js';
+import { datePicker, symbolSearch } from './dom.js';
 import { loadChart } from './data.js';
 
 function getReplayRunFromURL() {
@@ -22,6 +22,8 @@ async function initReplay() {
     state.replayEvents = replay.events || [];
     state.replayEventMap = Object.fromEntries((state.replayEvents || []).map(event => [event.event_id, event]));
     state.replaySymbols = [...new Set((state.replayEvents || []).map(event => event.symbol))].sort();
+    const review = await fetchJSON(`/api/review/${replayRun}`);
+    state.reviewMarks = review.marks || {};
   } catch (e) {
     console.error('replay init error', e);
   }
@@ -49,11 +51,13 @@ async function initApp() {
     datePicker.addEventListener('change', () => {
       state.currentDate = datePicker.value;
       if (state.replayRun) {
-        const firstEventForDate = state.replayEvents.find(
-          event => event.date === state.currentDate && event.symbol === state.currentSymbol,
-        ) || state.replayEvents.find(event => event.date === state.currentDate);
+        const currentDateEvents = state.replayEvents.filter(event => event.date === state.currentDate);
+        const keepAll = state.currentSymbol === 'ALL';
+        const firstEventForDate = keepAll
+          ? currentDateEvents[0]
+          : currentDateEvents.find(event => event.symbol === state.currentSymbol) || currentDateEvents[0];
         if (firstEventForDate) {
-          state.currentSymbol = firstEventForDate.symbol;
+          state.currentSymbol = keepAll ? 'ALL' : firstEventForDate.symbol;
           state.selectedReplayEventId = firstEventForDate.event_id;
           state.replayFocusNonce += 1;
           symbolSearch.value = state.currentSymbol;
@@ -68,10 +72,12 @@ async function initApp() {
     state.currentDate = dateKeys[0];
     if (state.replayRun && state.replayEvents.length > 0) {
       const firstEvent = state.replayEvents.find(event => event.date === state.currentDate) || state.replayEvents[0];
-      state.currentSymbol = firstEvent.symbol;
+      state.currentSymbol = 'ALL';
       state.selectedReplayEventId = firstEvent.event_id;
+      symbolSearch.value = 'ALL';
     } else {
       state.currentSymbol = 'AAPL';
+      symbolSearch.value = 'AAPL';
     }
     refreshReplayPanel();
     loadChart();

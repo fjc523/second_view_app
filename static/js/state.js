@@ -18,4 +18,5 @@ export const state = {
   replaySymbols: [],
   selectedReplayEventId: null,
   replayFocusNonce: 0,
+  reviewMarks: {},
 };
