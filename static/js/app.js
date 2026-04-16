@@ -22,8 +22,15 @@ async function initReplay() {
     state.replayEvents = replay.events || [];
     state.replayEventMap = Object.fromEntries((state.replayEvents || []).map(event => [event.event_id, event]));
     state.replaySymbols = [...new Set((state.replayEvents || []).map(event => event.symbol))].sort();
+    const localKey = `reviewMarks:${replayRun}`;
+    let localMarks = {};
+    try {
+      localMarks = JSON.parse(localStorage.getItem(localKey) || '{}') || {};
+    } catch (e) {
+      console.error('load local review marks error', e);
+    }
     const review = await fetchJSON(`/api/review/${replayRun}`);
-    state.reviewMarks = review.marks || {};
+    state.reviewMarks = { ...localMarks, ...(review.marks || {}) };
   } catch (e) {
     console.error('replay init error', e);
   }

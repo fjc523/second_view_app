@@ -11,29 +11,55 @@ function currentDateEvents() {
   return state.replayEvents.filter(event => event.date === state.currentDate);
 }
 
-function visibleEvents() {
-  return state.currentSymbol === 'ALL'
+function currentVisibleBuys() {
+  const filtered = state.currentSymbol === 'ALL'
     ? currentDateEvents()
     : currentDateEvents().filter(event => event.symbol === state.currentSymbol);
+  return filtered.filter(event => event.event_type === 'buy');
+}
+
+function linkedReviewIds(eventId) {
+  const event = state.replayEventMap[eventId];
+  if (!event) return [];
+  const linked = event.linked_closed_trade_rows || [];
+  if (linked.length === 0) return [eventId];
+  return state.replayEvents
+    .filter(e => (e.linked_closed_trade_rows || []).some(idx => linked.includes(idx)))
+    .map(e => e.event_id);
 }
 
 function persistMarks() {
+  const payload = JSON.stringify(state.reviewMarks);
   try {
     const key = `reviewMarks:${state.replayRun || 'default'}`;
-    localStorage.setItem(key, JSON.stringify(state.reviewMarks));
+    localStorage.setItem(key, payload);
   } catch (e) {
-    console.error('persist review marks error', e);
+    console.error('persist review marks local error', e);
+  }
+  if (state.replayRun) {
+    fetchJSON(`/api/review/${state.replayRun}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ marks: state.reviewMarks }),
+    }).catch(e => {
+      console.error('persist review marks remote error', e);
+    });
   }
 }
 
 function markSelected(label) {
   if (!state.selectedReplayEventId) return;
-  state.reviewMarks[state.selectedReplayEventId] = {
+  const ids = linkedReviewIds(state.selectedReplayEventId);
+  const payload = {
     label,
     timestamp: new Date().toISOString(),
   };
+  ids.forEach(id => {
+    state.reviewMarks[id] = payload;
+  });
   persistMarks();
   renderReplayPanelForSymbol();
+  refreshReviewStatus();
 }
 
 function eventDatesInOrder() {
@@ -41,9 +67,15 @@ function eventDatesInOrder() {
 }
 
 function stepReplayEvent(direction) {
-  const events = visibleEvents();
+  const events = currentVisibleBuys();
   if (events.length === 0) return;
   let idx = events.findIndex(event => event.event_id === state.selectedReplayEventId);
+  if (idx < 0 && state.selectedReplayEventId) {
+    const current = state.replayEventMap[state.selectedReplayEventId];
+    if (current && current.linked_closed_trade_rows?.length) {
+      idx = events.findIndex(event => (event.linked_closed_trade_rows || []).some(row => current.linked_closed_trade_rows.includes(row)));
+    }
+  }
   if (idx < 0) idx = 0;
   const nextIdx = idx + direction;
   if (nextIdx >= 0 && nextIdx < events.length) {
@@ -58,8 +90,8 @@ function stepReplayEvent(direction) {
   if (targetDateIdx < 0 || targetDateIdx >= dates.length) return;
   const targetDate = dates[targetDateIdx];
   const targetEvents = state.currentSymbol === 'ALL'
-    ? state.replayEvents.filter(event => event.date === targetDate)
-    : state.replayEvents.filter(event => event.date === targetDate && event.symbol === state.currentSymbol);
+    ? state.replayEvents.filter(event => event.date === targetDate && event.event_type === 'buy')
+    : state.replayEvents.filter(event => event.date === targetDate && event.symbol === state.currentSymbol && event.event_type === 'buy');
   if (targetEvents.length === 0) return;
   state.currentDate = targetDate;
   const targetEvent = direction > 0 ? targetEvents[0] : targetEvents[targetEvents.length - 1];
@@ -74,13 +106,13 @@ function stepReplayEvent(direction) {
 
 function refreshReviewStatus() {
   if (!reviewStatus || !state.replayRun) return;
-  const events = currentDateEvents();
+  const events = currentVisibleBuys();
   const marked = events.filter(event => state.reviewMarks[event.event_id]).length;
   const selected = state.selectedReplayEventId ? state.reviewMarks[state.selectedReplayEventId] : null;
   reviewStatus.innerHTML = `
-    <div><strong>快捷键</strong>：←/↑ 上一条，→/↓ 下一条，<strong>K</strong> 标记保留，<strong>X</strong> 标记排除，<strong>U</strong> 取消当前标记</div>
-    <div><strong>日期进度</strong>：已标记 ${marked} / ${events.length}</div>
-    <div><strong>当前事件标记</strong>：${selected ? selected.label : '未标记'}</div>
+    <div><strong>快捷键</strong>：←/↑ 上一组，→/↓ 下一组，<strong>K</strong> 标记保留整组，<strong>X</strong> 标记排除整组，<strong>U</strong> 取消当前组标记</div>
+    <div><strong>日期进度</strong>：已标记 ${marked} / ${events.length} 组</div>
+    <div><strong>当前分组标记</strong>：${selected ? selected.label : '未标记'}</div>
   `;
 }
 
@@ -108,7 +140,7 @@ function formatPercent(value) {
 
 function renderReplayPanelForSymbol() {
   if (!state.replayRun || !replayPanel) return;
-  const currentEvents = visibleEvents();
+  const currentEvents = currentVisibleBuys();
   const items = currentEvents.map(event => {
     const dt = new Date(event.timestamp).toLocaleString('en-US', {
       timeZone: state.tz,
@@ -122,19 +154,18 @@ function renderReplayPanelForSymbol() {
     const markText = mark ? ` · 标记=${mark.label}` : '';
     return `
       <div class="replay-item${activeClass}" data-event-id="${event.event_id}">
-        <div class="replay-item-head replay-${event.event_type}">${event.symbol} · ${event.event_type.toUpperCase()} · ${dt}${markText}</div>
-        <div class="replay-item-meta">price=${Number(event.price).toFixed(4)} qty=${event.quantity}</div>
+        <div class="replay-item-head replay-${event.event_type}">${event.symbol} · BUY组 · ${dt}${markText}</div>
+        <div class="replay-item-meta">buy=${Number(event.price).toFixed(4)} qty=${event.quantity}</div>
         <div class="replay-item-meta">weight ${formatPercent(event.target_weight_before)} → ${formatPercent(event.target_weight_after)}</div>
-        <div class="replay-item-meta">contribution=${formatPercent(event.contribution_pct)}</div>
-        <div class="replay-item-meta replay-reason">reason=${event.reason}</div>
+        <div class="replay-item-meta">reason=${event.reason}</div>
       </div>
     `;
   }).join('');
   replayPanel.innerHTML = `
     <div class="replay-title">Replay Run</div>
     <div class="replay-run-id">${state.replayRun}</div>
-    <div class="replay-count">${state.currentSymbol === 'ALL' ? '当前日期事件数' : '当前标的事件数'}：${currentEvents.length}</div>
-    ${items || '<div class="replay-empty">当前 date/symbol 无回放事件</div>'}
+    <div class="replay-count">${state.currentSymbol === 'ALL' ? '当前日期 BUY 组数' : '当前标的 BUY 组数'}：${currentEvents.length}</div>
+    ${items || '<div class="replay-empty">当前 date/symbol 无可审阅 BUY 组</div>'}
   `;
   replayPanel.querySelectorAll('.replay-item').forEach(el => {
     el.addEventListener('click', () => selectReplayEvent(el.dataset.eventId));
