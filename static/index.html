@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecondView – 1s Stock Data</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">SecondView<span>1s Data</span></div>
+  <div class="btn-group" id="tzGroup">
+    <button class="btn" data-val="America/New_York">ET</button>
+    <button class="btn active" data-val="Asia/Shanghai">BJ</button>
+  </div>
+  <div class="clock" id="clock"></div>
+</div>
+
+<div class="app-body">
+<div class="sidebar" id="sidebar">
+  <div class="search-box">
+    <input type="text" id="symbolSearch" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
+    <div class="search-results" id="searchResults"></div>
+  </div>
+  <div class="date-picker">
+    <label class="date-label-text">Date</label>
+    <select id="datePicker"></select>
+  </div>
+  <div class="date-picker">
+    <label class="date-label-text">Events</label>
+    <select id="eventListPicker">
+      <option value="">Select CSV...</option>
+    </select>
+  </div>
+  <div class="event-list-meta" id="eventListMeta">No event list selected</div>
+  <div class="event-cards" id="eventCards"></div>
+</div>
+
+<div class="main">
+  <div class="chart-section">
+    <div class="toolbar">
+      <span class="toolbar-sym" id="tbSymbol">-</span>
+      <span class="toolbar-price" id="tbPrice">-</span>
+      <span class="toolbar-change" id="tbChange">-</span>
+      <div class="toolbar-sep"></div>
+      <div class="btn-group" id="chartTypeGroup">
+        <button class="btn active" data-val="line">Line</button>
+        <button class="btn" data-val="candle">Candle</button>
+      </div>
+      <div class="btn-group" id="resGroup">
+        <button class="btn" data-val="1">1s</button>
+        <button class="btn active" data-val="5">5s</button>
+        <button class="btn" data-val="10">10s</button>
+        <button class="btn" data-val="60">1m</button>
+      </div>
+      <div class="btn-group" id="sessionGroup">
+        <button class="btn active" data-val="all">All</button>
+        <button class="btn" data-val="premarket">Pre</button>
+        <button class="btn" data-val="market">Mkt</button>
+        <button class="btn" data-val="afterhours">Ext</button>
+      </div>
+      <div class="toolbar-sep"></div>
+      <button class="toggle-btn active" id="toggleMA">MA</button>
+      <button class="toggle-btn active" id="toggleFilter">Hampel</button>
+      <button class="toggle-btn" id="toggleMarketState">趋势</button>
+    </div>
+    <div class="chart-wrap">
+      <div class="ma-legend" id="maLegend"></div>
+      <div class="vol-legend" id="volLegend"></div>
+      <div id="chart"></div>
+      <div class="range-overlay" id="rangeOverlay"></div>
+      <div class="range-tooltip" id="rangeTooltip"></div>
+      <div class="range-price-tag range-price-left" id="rangePriceLeft"></div>
+      <div class="range-price-tag range-price-right" id="rangePriceRight"></div>
+      <div class="range-divider" id="rangeDivider"></div>
+      <div class="range-price-tag range-price-mid" id="rangePriceMid"></div>
+      <div class="range-sub-tooltip range-sub-left" id="rangeSubLeft"></div>
+      <div class="range-sub-tooltip range-sub-right" id="rangeSubRight"></div>
+      <div class="loading-overlay hidden" id="loading">
+        <div class="spinner"></div>Loading…
+      </div>
+    </div>
+    <div class="timeline-bar" id="timeline">
+      <canvas id="timelineCanvas"></canvas>
+    </div>
+  </div>
+  <div class="stats-panel hidden" id="statsPanel">
+    <div class="stat-section">
+      <div class="stat-title">Price</div>
+      <div id="statPrice"></div>
+    </div>
+    <div class="stat-section">
+      <div class="stat-title">Volume</div>
+      <div id="statVolume"></div>
+    </div>
+    <div class="stat-section">
+      <div class="stat-title">Session</div>
+      <div id="statSession"></div>
+    </div>
+    <div class="stat-section">
+      <div class="stat-title">Data</div>
+      <div id="statData"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+export const $ = id => document.getElementById(id);
+
+export const symbolSearch = $('symbolSearch');
+export const searchResults = $('searchResults');
+export const datePicker = $('datePicker');
+export const eventListPicker = $('eventListPicker');
+export const eventCards = $('eventCards');
+export const eventListMeta = $('eventListMeta');
+export const chartEl = $('chart');
+export const loading = $('loading');
+export const maLegend = $('maLegend');
+export const volLegend = $('volLegend');
+export const rangeOverlay = $('rangeOverlay');
+export const rangeTooltip = $('rangeTooltip');
+export const rangePriceLeft = $('rangePriceLeft');
+export const rangePriceRight = $('rangePriceRight');
+export const rangeDivider = $('rangeDivider');
+export const rangePriceMid = $('rangePriceMid');
+export const rangeSubLeft = $('rangeSubLeft');
+export const rangeSubRight = $('rangeSubRight');
+export const timelineCanvas = $('timelineCanvas');
+export const clockEl = $('clock');
