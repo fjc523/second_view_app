@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -15,10 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 
+from paths import DEFAULT_PARQUET_DIR as PARQUET_DIR
+
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
-sys.path.insert(0, str(APP_DIR.parent))
-from src.paths import DEFAULT_PARQUET_DIR as PARQUET_DIR  # noqa: E402
 EVENT_LIST_DIR = APP_DIR.parent / "exps" / "event_list"
 AUTO_RESEARCH_DIR = APP_DIR.parent / "auto_research"
 ALPHA_SECOND_V2_EVENT_DIR = APP_DIR.parent / "alpha_second_v2" / "event"
