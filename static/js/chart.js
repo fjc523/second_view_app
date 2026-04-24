@@ -309,6 +309,29 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
       const eventCandle = data.candles.find(c => c.time >= markerTime)
         || [...data.candles].reverse().find(c => c.time <= markerTime);
       if (!eventCandle) return;
+
+      if (marker.marker_type === 'strategy_entry') {
+        markers.push({
+          time: eventCandle.time,
+          position: 'belowBar',
+          color: '#22c55e',
+          shape: 'arrowUp',
+          text: marker.label || 'Entry',
+        });
+        return;
+      }
+
+      if (marker.marker_type === 'strategy_exit') {
+        markers.push({
+          time: eventCandle.time,
+          position: 'aboveBar',
+          color: '#f97316',
+          shape: 'arrowDown',
+          text: marker.label || 'Exit',
+        });
+        return;
+      }
+
       const isAnchor = Boolean(marker.is_anchor) || idx === 0;
       markers.push({
         time: eventCandle.time,
