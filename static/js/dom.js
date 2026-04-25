@@ -12,7 +12,6 @@ export const maLegend = $('maLegend');
 export const volLegend = $('volLegend');
 export const rangeOverlay = $('rangeOverlay');
 export const rangeTooltip = $('rangeTooltip');
-export const rangeAmountTooltip = $('rangeAmountTooltip');
 export const rangePriceLeft = $('rangePriceLeft');
 export const rangePriceRight = $('rangePriceRight');
 export const rangeDivider = $('rangeDivider');

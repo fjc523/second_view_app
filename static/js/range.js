@@ -1,6 +1,6 @@
 import { state } from './state.js';
-import { chartEl, rangeOverlay, rangeTooltip, rangeAmountTooltip, rangePriceLeft, rangePriceRight, rangeDivider, rangePriceMid, rangeSubLeft, rangeSubRight } from './dom.js';
-import { formatNumber, formatRangeDuration } from './format.js';
+import { chartEl, rangeOverlay, rangeTooltip, rangePriceLeft, rangePriceRight, rangeDivider, rangePriceMid, rangeSubLeft, rangeSubRight } from './dom.js';
+import { formatRangeDuration, formatNumber } from './format.js';
 import { getChart, getCrosshairBar, setChartInteraction } from './chart.js';
 
 let active = false;
@@ -74,31 +74,15 @@ function getCandlesInRange(leftTime, rightTime) {
   return candles.slice(startIdx, endIdx);
 }
 
-function getAmountInRange(leftTime, rightTime) {
+function getRangeAmount(leftTime, rightTime) {
   const bars = state.data?.volume || [];
   if (!bars.length) return 0;
 
   const startIdx = lowerBoundByTime(bars, leftTime);
   const endIdx = upperBoundByTime(bars, rightTime);
   let total = 0;
-  for (let i = startIdx; i < endIdx; i++) {
-    const value = Number(bars[i].value);
-    if (Number.isFinite(value)) total += value;
-  }
+  for (let i = startIdx; i < endIdx; i++) total += bars[i].value;
   return total;
-}
-
-function amountTooltipContent(leftBar, rightBar) {
-  return `
-    <span class="range-amount-label">成交额</span>
-    <span class="range-amount-value">$${formatNumber(getAmountInRange(leftBar.time, rightBar.time))}</span>
-  `;
-}
-
-function positionAmountTooltip(left, width, chartWidth) {
-  const mid = clamp(left + width / 2, 16, chartWidth - 16);
-  rangeAmountTooltip.style.left = `${mid}px`;
-  rangeAmountTooltip.style.top = `${Math.min(chartEl.clientHeight - 34, chartEl.clientHeight * 0.82)}px`;
 }
 
 function getDirectionalDrawdownPct(leftBar, rightBar) {
@@ -136,6 +120,10 @@ function tooltipContent(leftBar, rightBar) {
     <div class="range-tooltip-drawdown">
       <span class="range-tooltip-label">最大回撤</span>
       ${pctHTML(drawdownPct, true)}
+    </div>
+    <div class="range-tooltip-drawdown">
+      <span class="range-tooltip-label">成交总额</span>
+      <span class="range-pct compact">$${formatNumber(getRangeAmount(leftBar.time, rightBar.time))}</span>
     </div>
   `;
 }
@@ -193,7 +181,6 @@ function hideRange() {
   endBar = null;
   rangeOverlay.style.display = 'none';
   rangeTooltip.style.display = 'none';
-  rangeAmountTooltip.style.display = 'none';
   hidePriceTags();
   hideSplit();
   setChartInteraction(true);
@@ -304,7 +291,6 @@ export function initRangeSelection() {
     rangeOverlay.style.left = `${startX}px`;
     rangeOverlay.style.width = '0px';
     rangeTooltip.style.display = 'none';
-    rangeAmountTooltip.style.display = 'none';
     hidePriceTags();
     hideSplit();
 
@@ -339,10 +325,6 @@ export function initRangeSelection() {
       rangeTooltip.style.left = `${mid}px`;
       rangeTooltip.style.display = 'block';
 
-      rangeAmountTooltip.innerHTML = amountTooltipContent(lb, rb);
-      positionAmountTooltip(left, width, rect.width);
-      rangeAmountTooltip.style.display = 'block';
-
       updatePriceTags(lb, rb, left, width);
     }
   });
@@ -375,9 +357,6 @@ export function initRangeSelection() {
 
     const { left: ovLeft, width: ovWidth } = getOverlayBounds();
     updatePriceTags(lb, rb, ovLeft, ovWidth);
-    rangeAmountTooltip.innerHTML = amountTooltipContent(lb, rb);
-    positionAmountTooltip(ovLeft, ovWidth, chartEl.clientWidth);
-    rangeAmountTooltip.style.display = 'block';
 
     setChartInteraction(true);
     subView();
