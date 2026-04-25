@@ -76,7 +76,9 @@ export function createChart() {
       borderColor: '#1f2633',
       timeVisible: true,
       secondsVisible: true,
-      rightOffset: 5,
+      rightOffset: 0,
+      fixLeftEdge: true,
+      fixRightEdge: true,
       barSpacing: 6,
       minBarSpacing: 0.5,
       tickMarkFormatter: t => {
