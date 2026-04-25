@@ -187,23 +187,19 @@ export function createChart() {
 
 export function applyBarSpacing() {
   if (!chart) return;
-  let spacing = 6;
   let minSpacing = 1.5;
   if (state.resolution <= 1) {
-    spacing = 3;
     minSpacing = 1.5;
   } else if (state.resolution <= 5) {
-    spacing = 4;
     minSpacing = 1.7;
   } else if (state.resolution <= 10) {
-    spacing = 6;
     minSpacing = 2.0;
   } else {
-    spacing = 8;
     minSpacing = 2.2;
   }
+  // Default barSpacing = minBarSpacing so chart starts at maximum zoom-out
   chart.timeScale().applyOptions({
-    barSpacing: spacing,
+    barSpacing: minSpacing,
     minBarSpacing: minSpacing,
   });
 }
@@ -361,16 +357,22 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
     (state.activeEvent.anchor_marker_date_et || state.activeEvent.event_date_et) === data.date
   ) ? timeToLogical(data, Number(state.activeEvent.anchor_marker_epoch || state.activeEvent.event_epoch)) : null;
 
-  // Compute half-span: prefer saved time span (converted to logical), fall back to current range
+  // Compute max zoom-out half-span from chart width and minBarSpacing
+  const tsOpts = chart.timeScale().options();
+  const minBS = tsOpts.minBarSpacing || 2;
+  const maxZoomOutBars = chartEl.clientWidth > 0 ? chartEl.clientWidth / minBS : 600;
+  const maxZoomOutHalfSpan = maxZoomOutBars / 2;
+
+  // Compute half-span: prefer saved time span (converted to logical), fall back to max zoom-out
   let halfSpan = null;
   if (Number.isFinite(savedTimeSpan) && savedTimeSpan > 0 && Number.isFinite(resolution) && resolution > 0) {
     halfSpan = savedTimeSpan / (2 * resolution);
   }
+  // Ensure at least max zoom-out span
   if (halfSpan == null || !Number.isFinite(halfSpan) || halfSpan <= 0) {
-    const logicalRange = chart.timeScale().getVisibleLogicalRange();
-    if (logicalRange && Number.isFinite(logicalRange.from) && Number.isFinite(logicalRange.to)) {
-      halfSpan = (logicalRange.to - logicalRange.from) / 2;
-    }
+    halfSpan = maxZoomOutHalfSpan;
+  } else if (halfSpan < maxZoomOutHalfSpan) {
+    halfSpan = maxZoomOutHalfSpan;
   }
 
   if (Number.isFinite(eventLogical) && Number.isFinite(halfSpan) && halfSpan > 0) {
@@ -386,7 +388,12 @@ export function renderChart(data, savedCenter, savedTimeSpan) {
       to: centerLogical + halfSpan,
     });
   } else {
-    chart.timeScale().fitContent();
+    // Fallback: show last N bars at max zoom-out
+    const totalBars = data.candles ? data.candles.length : 0;
+    chart.timeScale().setVisibleLogicalRange({
+      from: totalBars - maxZoomOutBars,
+      to: totalBars,
+    });
   }
 }
 
