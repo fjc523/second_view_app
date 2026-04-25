@@ -1,6 +1,6 @@
 # SecondView
 
-1 秒分辨率股票行情可视化工具。FastAPI 后端提供 CSV 数据的 JSON 接口，单页前端使用 TradingView lightweight-charts 渲染交互式图表。
+1 秒分辨率股票行情可视化工具。FastAPI 后端读取本地 parquet 数据并提供 JSON 接口，单页前端使用本地固定版本的 TradingView lightweight-charts 渲染交互式图表。
 
 ## Setup（首次配置）
 
@@ -40,6 +40,32 @@ uv run python server.py
 打开浏览器访问：
 
 - `http://127.0.0.1:8787`
+
+默认只监听 `127.0.0.1`。如确实需要让局域网设备访问，可显式设置：
+
+```bash
+HOST=0.0.0.0 uv run python server.py
+```
+
+### 3.1)（推荐）后台常驻运行 / 重启
+
+```bash
+./scripts/serverctl start
+./scripts/serverctl status
+./scripts/serverctl logs
+
+# 重启
+./scripts/serverctl restart
+
+# 停止
+./scripts/serverctl stop
+```
+
+后台脚本同样默认只监听 `127.0.0.1`。如确实需要让局域网设备访问，可显式设置：
+
+```bash
+HOST=0.0.0.0 ./scripts/serverctl start
+```
 
 ### 4) 常见问题
 
@@ -81,8 +107,20 @@ static/js/*.js            # 模块化逻辑
 
 | 端点 | 说明 |
 |------|------|
-| `GET /api/dates` | 返回所有日期及每个标的的摘要信息 |
+| `GET /api/dates` | 返回所有可用日期；默认不计算摘要，避免首次加载过慢 |
+| `GET /api/search?q=A` | 按前缀搜索标的 |
+| `GET /api/event-lists` | 返回可用事件列表 |
+| `GET /api/event-lists/{name}` | 返回某个事件列表的事件行 |
 | `GET /api/price/{date}/{symbol}` | 返回 K 线、成交量、VWAP、均线等完整图表数据 |
+
+`/api/dates` 查询参数：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `include_summary` | `false` | 是否计算日期内标的摘要 |
+| `symbols` | 空 | 逗号分隔的标的列表；仅在 `include_summary=true` 时使用，最多 25 个；为空时默认返回 AAPL（如果存在） |
+
+说明：摘要会读取对应 symbol 的年度 parquet，首次请求可能较慢；前端默认不启用。
 
 `/api/price` 查询参数：
 

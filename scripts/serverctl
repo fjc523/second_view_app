@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUN_DIR="$ROOT_DIR/.run"
+PID_FILE="$RUN_DIR/server.pid"
+LOG_FILE="$RUN_DIR/server.log"
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-8787}"
+
+mkdir -p "$RUN_DIR"
+
+is_running() {
+  if [[ -f "$PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+cmd_start() {
+  if is_running; then
+    echo "server already running (pid=$(cat "$PID_FILE"))"
+    exit 0
+  fi
+
+  echo "starting server on $HOST:$PORT..."
+  # Run detached; write pid + logs.
+  nohup bash -lc "cd \"$ROOT_DIR\" && uv run uvicorn server:app --host \"$HOST\" --port \"$PORT\"" \
+    >"$LOG_FILE" 2>&1 &
+  echo $! >"$PID_FILE"
+
+  sleep 0.5
+  if is_running; then
+    echo "started (pid=$(cat "$PID_FILE")). logs: $LOG_FILE"
+  else
+    echo "failed to start. logs:"
+    tail -n 50 "$LOG_FILE" || true
+    exit 1
+  fi
+}
+
+cmd_stop() {
+  if ! [[ -f "$PID_FILE" ]]; then
+    echo "no pidfile ($PID_FILE). nothing to stop."
+    exit 0
+  fi
+  local pid
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [[ -z "${pid:-}" ]]; then
+    rm -f "$PID_FILE"
+    echo "pidfile empty; removed."
+    exit 0
+  fi
+
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "stopping (pid=$pid)..."
+    kill "$pid" 2>/dev/null || true
+    # Give it a moment; then hard kill if needed.
+    for _ in {1..20}; do
+      if kill -0 "$pid" 2>/dev/null; then
+        sleep 0.1
+      else
+        break
+      fi
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  else
+    echo "process not running; cleaning pidfile."
+  fi
+  rm -f "$PID_FILE"
+  echo "stopped."
+}
+
+cmd_restart() {
+  cmd_stop
+  cmd_start
+}
+
+cmd_status() {
+  if is_running; then
+    echo "running (pid=$(cat "$PID_FILE")), host=$HOST, port=$PORT"
+    exit 0
+  fi
+  echo "not running"
+  exit 1
+}
+
+cmd_logs() {
+  if [[ -f "$LOG_FILE" ]]; then
+    tail -n 200 "$LOG_FILE"
+  else
+    echo "no log file yet ($LOG_FILE)"
+  fi
+}
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <start|stop|restart|status|logs>
+
+Environment:
+  HOST=127.0.0.1  Override listen host (default 127.0.0.1)
+  PORT=8787  Override listen port (default 8787)
+EOF
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    start) cmd_start ;;
+    stop) cmd_stop ;;
+    restart) cmd_restart ;;
+    status) cmd_status ;;
+    logs) cmd_logs ;;
+    ""|-h|--help) usage ;;
+    *) echo "unknown command: $cmd" >&2; usage; exit 2 ;;
+  esac
+}
+
+main "$@"

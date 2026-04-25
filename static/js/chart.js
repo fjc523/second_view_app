@@ -11,6 +11,7 @@ let maSeries = {};
 let volMaSeries = null;
 let marketStateSeries = null;
 let lastCrosshairBar = null;
+let resizeObserver = null;
 
 export function getChart() {
   return chart;
@@ -26,6 +27,10 @@ export function setChartInteraction(enabled) {
 }
 
 export function createChart() {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
   if (chart) {
     chart.remove();
     chart = null;
@@ -182,9 +187,11 @@ export function createChart() {
     updateVolLegend(d);
   });
 
-  new ResizeObserver(() => {
+  resizeObserver = new ResizeObserver(() => {
+    if (!chart) return;
     chart.applyOptions({ width: chartEl.clientWidth, height: chartEl.clientHeight });
-  }).observe(chartEl);
+  });
+  resizeObserver.observe(chartEl);
 }
 
 export function applyBarSpacing() {

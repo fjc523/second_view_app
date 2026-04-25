@@ -1,6 +1,6 @@
 # 0 - 核心逻辑与启动
 
-本项目是 1 秒级行情数据可视化工具：后端 FastAPI 读取 CSV 数据并输出 JSON，前端单页用 TradingView lightweight-charts 渲染。
+本项目是 1 秒级行情数据可视化工具：后端 FastAPI 读取本地 parquet 数据并输出 JSON，前端单页用 TradingView lightweight-charts 渲染。
 
 ## 1. 启动方式
 
@@ -20,16 +20,16 @@ uv run python server.py
 
 - 后端入口：`server.py`
 - 前端静态资源：`static/`
-- 数据目录：`../data/1s/{YYYYMMDD}/{SYMBOL}.csv`
+- 数据目录：`{PARQUET_DIR}/{SYMBOL}/{YYYY}.parquet`
 
-说明：`server.py` 以当前目录为 APP_DIR，数据目录固定为 `APP_DIR/../data/1s`。
+说明：`PARQUET_DIR` 通过本地 `.env` 或环境变量配置；不要在代码里硬编码个人机器路径。
 
-## 3. CSV 数据格式
+## 3. Parquet 数据格式
 
 后端按以下字段读取（大小写敏感）：
 
 必需字段：
-- `bob`：时间戳字符串，可被 pandas 解析；必须是 UTC（用于盘前/盘中/盘后切分）
+- `bob`：带时区时间戳；后端会转换到 UTC 后用于绘图和盘段切分
 - `open` `high` `low` `close`：OHLC
 - `volume`：成交量（VWAP 与统计使用）
 - `amount`：成交额（柱状图使用）
@@ -45,19 +45,38 @@ uv run python server.py
 ## 4. API 返回结构（核心字段）
 
 ### 4.1 `GET /api/dates`
-返回所有日期和简要标的信息（用于左侧列表）：
+默认返回所有可用日期。为避免首次加载过慢，默认不计算每个标的的摘要：
 
 ```
 {
   "dates": {
-    "20250207": [
-      {"symbol": "AAPL", "close": 187.23, "change_pct": 1.25, "volume": 0}
-    ]
-  }
+    "20260416": [],
+    "20260415": []
+  },
+  "summary_symbols": []
 }
 ```
 
-说明：摘要通过读取 CSV 首末行计算涨跌幅，不做全量聚合。
+如果需要摘要，可显式请求：
+
+```
+GET /api/dates?include_summary=true&symbols=AAPL,MSFT
+```
+
+返回示例：
+
+```
+{
+  "dates": {
+    "20260416": [
+      {"symbol": "AAPL", "close": 264.1, "change_pct": -0.99, "volume": 52503191}
+    ]
+  },
+  "summary_symbols": ["AAPL"]
+}
+```
+
+注意：摘要会读取对应 symbol 的年度 parquet，首次请求可能较慢；前端默认不启用。
 
 ### 4.2 `GET /api/price/{date}/{symbol}`
 关键字段：
@@ -77,8 +96,8 @@ uv run python server.py
 
 ## 5. 前后端数据流
 
-1. 前端启动后请求 `/api/dates` 得到日期列表与标的摘要
-2. 默认选择最新日期与第一只标的
+1. 前端启动后请求 `/api/dates` 得到日期列表
+2. 默认选择最新日期与默认标的
 3. 根据控制栏参数请求 `/api/price` 并渲染图表
 4. 切换分辨率、盘段、过滤器会重新拉取数据并重绘
 

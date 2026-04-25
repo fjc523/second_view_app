@@ -402,6 +402,7 @@ def _load_event_rows(name: str, mtime_ns: int, markers_mtime_ns: int) -> list[di
 
 
 _dates_cache: list[str] | None = None
+SUMMARY_SYMBOL_LIMIT = 25
 
 
 def _list_dates() -> list[str]:
@@ -425,6 +426,92 @@ def _list_dates() -> list[str]:
     dates = sorted(dates_set, reverse=True)
     _dates_cache = list(dates)
     return _dates_cache
+
+
+def _date_key_from_bob(series: pd.Series) -> pd.Series:
+    """Return YYYYMMDD date keys in US/Eastern time."""
+    if series.dt.tz is not None:
+        return series.dt.tz_convert("US/Eastern").dt.strftime("%Y%m%d")
+    return series.dt.strftime("%Y%m%d")
+
+
+@lru_cache(maxsize=128)
+def _load_symbol_year_summary(symbol: str, year: str) -> dict[str, dict[str, object]]:
+    """Summarize one symbol/year parquet by ET date.
+
+    This is intentionally separate from the hot `/api/price` path. It is only
+    used when callers explicitly ask `/api/dates?include_summary=true`.
+    """
+    _validate_symbol(symbol)
+    pq_path = PARQUET_DIR / symbol / f"{year}.parquet"
+    if not pq_path.exists():
+        return {}
+
+    df = pd.read_parquet(pq_path, columns=["bob", "open", "close", "volume"])
+    if df.empty:
+        return {}
+
+    df = df.copy()
+    df["date"] = _date_key_from_bob(df["bob"])
+    grouped = (
+        df.groupby("date", sort=False)
+        .agg(open=("open", "first"), close=("close", "last"), volume=("volume", "sum"))
+        .reset_index()
+    )
+
+    summaries: dict[str, dict[str, object]] = {}
+    for row in grouped.itertuples(index=False):
+        first_open = float(row.open)
+        last_close = float(row.close)
+        change_pct = ((last_close - first_open) / first_open * 100) if first_open else 0.0
+        summaries[str(row.date)] = {
+            "symbol": symbol,
+            "close": round(last_close, 4),
+            "change_pct": round(change_pct, 2),
+            "volume": int(row.volume),
+        }
+    return summaries
+
+
+def _parse_summary_symbols(symbols: str) -> list[str]:
+    all_symbols = _get_all_symbols()
+    symbol_lookup = {s.upper(): s for s in all_symbols}
+
+    if not symbols.strip():
+        if "AAPL" in symbol_lookup:
+            return [symbol_lookup["AAPL"]]
+        return all_symbols[:1]
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for raw in symbols.split(","):
+        symbol = raw.strip()
+        if not symbol:
+            continue
+        _validate_symbol(symbol)
+        key = symbol.upper()
+        if key in seen:
+            continue
+        if key not in symbol_lookup:
+            raise HTTPException(404, f"symbol not found: {symbol}")
+        selected.append(symbol_lookup[key])
+        seen.add(key)
+
+    if len(selected) > SUMMARY_SYMBOL_LIMIT:
+        raise HTTPException(400, f"too many symbols; max {SUMMARY_SYMBOL_LIMIT}")
+    return selected
+
+
+def _build_date_summaries(dates: list[str], symbols: list[str]) -> dict[str, list[dict[str, object]]]:
+    result: dict[str, list[dict[str, object]]] = {date: [] for date in dates}
+    years = sorted({date[:4] for date in dates})
+    for symbol in symbols:
+        for year in years:
+            yearly = _load_symbol_year_summary(symbol, year)
+            for date, summary in yearly.items():
+                if date in result:
+                    result[date].append(summary)
+    return result
 
 
 def _filter_session(df: pd.DataFrame, session: str) -> pd.DataFrame:
@@ -595,10 +682,18 @@ def index():
 
 
 @app.get("/api/dates", response_class=ORJSONResponse)
-def api_dates():
+def api_dates(
+    include_summary: bool = Query(False),
+    symbols: str = Query("", max_length=1000),
+):
     dates = _list_dates()
+    if include_summary:
+        selected_symbols = _parse_summary_symbols(symbols)
+        result = _build_date_summaries(dates, selected_symbols)
+        return ORJSONResponse({"dates": result, "summary_symbols": selected_symbols})
+
     result = {date: [] for date in dates}
-    return ORJSONResponse({"dates": result})
+    return ORJSONResponse({"dates": result, "summary_symbols": []})
 
 
 _symbol_cache: list[str] | None = None
@@ -764,9 +859,10 @@ def main() -> None:
     import uvicorn
 
     # Use a less common default port to reduce local collisions.
-    uvicorn.run(app, host="0.0.0.0", port=8787)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8787"))
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
     main()
-

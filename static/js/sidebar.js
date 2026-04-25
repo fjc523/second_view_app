@@ -200,14 +200,17 @@ function renderEventCards() {
 
     const compactNotes = compactEventNotes(event.notes);
     const fullNotes = escapeHTML(event.notes || '');
+    const safeSymbol = escapeHTML(event.symbol);
+    const safeDate = escapeHTML(event.date);
+    const safeTime = escapeHTML(event.time);
     const starKey = getEventVisualKey(event);
     const starred = visualStarKeys.has(starKey);
     card.innerHTML = `
       <div class="event-card-top">
-        <span class="event-symbol">${event.symbol}</span>
+        <span class="event-symbol">${safeSymbol}</span>
         <button class="event-star${starred ? ' active' : ''}" type="button" aria-label="临时星标" aria-pressed="${starred ? 'true' : 'false'}" title="临时星标">${starred ? '★' : '☆'}</button>
       </div>
-      <div class="event-time">${event.date} ${event.time}</div>
+      <div class="event-time">${safeDate} ${safeTime}</div>
       <div class="event-notes"${fullNotes ? ` title="${fullNotes}"` : ''}>${escapeHTML(compactNotes)}</div>
     `;
     const starEl = card.querySelector('.event-star');
