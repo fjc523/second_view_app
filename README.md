@@ -6,19 +6,14 @@
 
 ### 0) 前置条件
 
-- **Python**：建议使用项目自带虚拟环境（`./.venv`）。如果没有，可用 `python3 -m venv .venv` 创建。
-- **数据目录结构**：需要本地 1s parquet 数据，目录布局为：
+- **uv**：建议使用 `uv` 管理虚拟环境与依赖（更快、更可复现）。安装方式见 `uv` 官方文档。
+- **数据目录结构**：本地可访问 1s_parquet 数据，保持目录内数据原状
 
-```
-{PARQUET_DIR}/{SYMBOL}/{YYYY}.parquet
-```
 
-### 1) 安装依赖（推荐在 venv 里）
+### 1) 安装依赖（uv）
 
 ```bash
-# 进入项目根目录后
-python3 -m venv .venv  # 如果你还没有 .venv
-./.venv/bin/python -m pip install -r requirements.txt
+uv sync
 ```
 
 ### 2) 配置 1s parquet 路径（每台机器各配各的）
@@ -39,7 +34,7 @@ PARQUET_DIR="/path/to/1s_parquet"
 ### 3) 启动服务（默认端口 8787）
 
 ```bash
-./.venv/bin/python server.py
+uv run python server.py
 ```
 
 打开浏览器访问：
@@ -50,12 +45,12 @@ PARQUET_DIR="/path/to/1s_parquet"
 
 - **报错 `PARQUET_DIR is not set`**：说明你没有配置 `.env` 或没有导出环境变量 `PARQUET_DIR`。
 - **报错 `PARQUET_DIR does not exist...`**：路径写错/磁盘没挂载/没有权限。
-- **报错缺少 `orjson` 等依赖**：请确认你在 `.venv` 里安装了依赖，并用 `./.venv/bin/python` 启动。
+- **报错缺少 `orjson` 等依赖**：请确认你已执行 `uv sync`，并用 `uv run ...` 启动。
 
 也可以临时用环境变量覆盖（不修改 `.env`）：
 
 ```bash
-PARQUET_DIR="/your/parquet/root" ./.venv/bin/python server.py
+PARQUET_DIR="/your/parquet/root" uv run python server.py
 ```
 
 ## 核心功能

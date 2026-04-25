@@ -1,0 +1,18 @@
+[project]
+name = "second-view"
+version = "0.0.0"
+description = "1-second resolution stock market data visualization (FastAPI backend + static SPA)."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pandas",
+  "pyarrow",
+  "numpy",
+  "orjson",
+]
+
+[tool.uv]
+managed = true
+

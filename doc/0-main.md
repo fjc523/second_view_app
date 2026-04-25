@@ -7,13 +7,13 @@
 1. 安装依赖
 
 ```
-pip install fastapi uvicorn pandas numpy orjson
+uv sync
 ```
 
-2. 启动服务（默认监听 http://127.0.0.1:8000）
+2. 启动服务（默认监听 http://127.0.0.1:8787）
 
 ```
-python server.py
+uv run python server.py
 ```
 
 ## 2. 目录约定
