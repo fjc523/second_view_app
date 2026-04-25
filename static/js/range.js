@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { chartEl, rangeOverlay, rangeTooltip, rangePriceLeft, rangePriceRight, rangeDivider, rangePriceMid, rangeSubLeft, rangeSubRight } from './dom.js';
-import { formatRangeDuration } from './format.js';
+import { formatRangeDuration, formatNumber } from './format.js';
 import { getChart, getCrosshairBar, setChartInteraction } from './chart.js';
 
 let active = false;
@@ -74,6 +74,17 @@ function getCandlesInRange(leftTime, rightTime) {
   return candles.slice(startIdx, endIdx);
 }
 
+function getRangeAmount(leftTime, rightTime) {
+  const bars = state.data?.volume || [];
+  if (!bars.length) return 0;
+
+  const startIdx = lowerBoundByTime(bars, leftTime);
+  const endIdx = upperBoundByTime(bars, rightTime);
+  let total = 0;
+  for (let i = startIdx; i < endIdx; i++) total += bars[i].value;
+  return total;
+}
+
 function getDirectionalDrawdownPct(leftBar, rightBar) {
   const candles = getCandlesInRange(leftBar.time, rightBar.time);
   if (candles.length < 2) return 0;
@@ -109,6 +120,10 @@ function tooltipContent(leftBar, rightBar) {
     <div class="range-tooltip-drawdown">
       <span class="range-tooltip-label">最大回撤</span>
       ${pctHTML(drawdownPct, true)}
+    </div>
+    <div class="range-tooltip-drawdown">
+      <span class="range-tooltip-label">成交总额</span>
+      <span class="range-pct compact">$${formatNumber(getRangeAmount(leftBar.time, rightBar.time))}</span>
     </div>
   `;
 }
