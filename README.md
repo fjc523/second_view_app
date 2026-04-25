@@ -2,6 +2,62 @@
 
 1 秒分辨率股票行情可视化工具。FastAPI 后端提供 CSV 数据的 JSON 接口，单页前端使用 TradingView lightweight-charts 渲染交互式图表。
 
+## Setup（首次配置）
+
+### 0) 前置条件
+
+- **Python**：建议使用项目自带虚拟环境（`./.venv`）。如果没有，可用 `python3 -m venv .venv` 创建。
+- **数据目录结构**：需要本地 1s parquet 数据，目录布局为：
+
+```
+{PARQUET_DIR}/{SYMBOL}/{YYYY}.parquet
+```
+
+### 1) 安装依赖（推荐在 venv 里）
+
+```bash
+# 进入项目根目录后
+python3 -m venv .venv  # 如果你还没有 .venv
+./.venv/bin/python -m pip install -r requirements.txt
+```
+
+### 2) 配置 1s parquet 路径（每台机器各配各的）
+
+项目通过 `PARQUET_DIR` 指定 parquet 根目录，推荐用本地 `.env`（不会提交到仓库）。
+
+```bash
+cp .env.example .env
+# 然后编辑 .env，把 PARQUET_DIR 改成你机器上的真实路径
+```
+
+`.env` 最少需要这一行：
+
+```bash
+PARQUET_DIR="/path/to/1s_parquet"
+```
+
+### 3) 启动服务（默认端口 8787）
+
+```bash
+./.venv/bin/python server.py
+```
+
+打开浏览器访问：
+
+- `http://127.0.0.1:8787`
+
+### 4) 常见问题
+
+- **报错 `PARQUET_DIR is not set`**：说明你没有配置 `.env` 或没有导出环境变量 `PARQUET_DIR`。
+- **报错 `PARQUET_DIR does not exist...`**：路径写错/磁盘没挂载/没有权限。
+- **报错缺少 `orjson` 等依赖**：请确认你在 `.venv` 里安装了依赖，并用 `./.venv/bin/python` 启动。
+
+也可以临时用环境变量覆盖（不修改 `.env`）：
+
+```bash
+PARQUET_DIR="/your/parquet/root" ./.venv/bin/python server.py
+```
+
 ## 核心功能
 
 - **多分辨率 K 线** — 支持 1s / 5s / 10s / 1min 聚合
@@ -16,41 +72,14 @@
 ## 项目结构
 
 ```
-server.py                 # FastAPI 后端
-paths.py                  # 本地 parquet 路径解析
+server.py                 # 启动入口（兼容：uvicorn server:app）
+backend/server.py         # FastAPI 后端实现
+backend/paths.py          # 本地 parquet 路径解析（.env / PARQUET_DIR）
 static/index.html         # 页面骨架
 static/css/app.css        # 样式
 static/js/app.js          # 前端入口
 static/js/*.js            # 模块化逻辑
 行情数据根目录/{SYMBOL}/{YYYY}.parquet
-```
-
-## 快速启动
-
-```bash
-# 依赖
-pip install fastapi uvicorn pandas numpy orjson pyarrow
-
-# 直接启动服务（默认 http://127.0.0.1:8000）
-python server.py
-
-# 或使用 uvicorn
-uvicorn server:app --host 127.0.0.1 --port 8000 --app-dir .
-```
-
-### 行情目录解析
-
-`second_view_app` 不再依赖 `alpha_second_base`。
-
-行情 parquet 根目录按以下优先级解析：
-1. 环境变量 `PARQUET_DIR`
-2. `/Volumes/ssd/us_stock_data/1s_parquet`
-3. `/Volumes/Intel SSD/StockData/1s_parquet`
-
-如需显式指定数据目录，可这样启动：
-
-```bash
-PARQUET_DIR="/your/parquet/root" python server.py
 ```
 
 ## API

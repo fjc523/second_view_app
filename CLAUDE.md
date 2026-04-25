@@ -20,12 +20,12 @@ No build step. No package manager config. Dependencies: `fastapi`, `uvicorn`, `p
 
 ## Architecture
 
-- **`server.py`**: FastAPI app (v2.0.0) with GZip middleware, `orjson` serialization, `lru_cache` on CSV loading (128 files), session filtering, time-resolution aggregation (1s–60s), Hampel spike filter, cumulative VWAP, moving averages (MA5/100/200), volume MA20.
+- **`backend/server.py`**: FastAPI app (v2.0.0) with GZip middleware, `orjson` serialization, `lru_cache` on CSV loading (128 files), session filtering, time-resolution aggregation (1s–60s), Hampel spike filter, cumulative VWAP, moving averages (MA5/100/200), volume MA20. Root `server.py` is a compatibility entrypoint.
 
 ### Data Layout
 
 Price data is loaded from a parquet root directory with layout `{PARQUET_DIR}/{SYMBOL}/{YYYY}.parquet`.
-`paths.py` resolves that root with priority: `PARQUET_DIR` env var, then built-in volume candidates. The app no longer depends on `alpha_second_base` for path resolution.
+`backend/paths.py` resolves that root from `.env` / `PARQUET_DIR`. The app no longer depends on `alpha_second_base` for path resolution.
 
 ### Frontend
 
