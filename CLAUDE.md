@@ -9,14 +9,14 @@ SecondView (second_view) — a web app for visualizing 1-second resolution stock
 ## Running the App
 
 ```bash
-# Start the server (default: http://127.0.0.1:8000)
+# Start the server directly (default: http://127.0.0.1:8000)
 python server.py
 
 # Or via uvicorn directly
-uvicorn server:app --host 127.0.0.1 --port 8000
+uvicorn server:app --host 127.0.0.1 --port 8000 --app-dir .
 ```
 
-No build step. No package manager config. Dependencies: `fastapi`, `uvicorn`, `pandas`, `numpy`, `orjson`.
+No build step. No package manager config. Dependencies: `fastapi`, `uvicorn`, `pandas`, `numpy`, `orjson`, `pyarrow`.
 
 ## Architecture
 
@@ -24,7 +24,8 @@ No build step. No package manager config. Dependencies: `fastapi`, `uvicorn`, `p
 
 ### Data Layout
 
-CSV files live at `../data/1s/{YYYYMMDD}/{SYMBOL}.csv` (relative to app dir). Each CSV has columns: `bob` (timestamp), `open`, `high`, `low`, `close`, `clean_open`, `clean_high`, `clean_low`, `clean_close`, `volume`, `amount`, `vwap`, `tick_count`. The `clean_*` columns are adjusted prices.
+Price data is loaded from a parquet root directory with layout `{PARQUET_DIR}/{SYMBOL}/{YYYY}.parquet`.
+`paths.py` resolves that root with priority: `PARQUET_DIR` env var, then built-in volume candidates. The app no longer depends on `alpha_second_base` for path resolution.
 
 ### Frontend
 

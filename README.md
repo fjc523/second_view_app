@@ -17,21 +17,40 @@
 
 ```
 server.py                 # FastAPI 后端
+paths.py                  # 本地 parquet 路径解析
 static/index.html         # 页面骨架
 static/css/app.css        # 样式
 static/js/app.js          # 前端入口
 static/js/*.js            # 模块化逻辑
-../data/1s/{YYYYMMDD}/{SYMBOL}.csv   # 数据文件
+行情数据根目录/{SYMBOL}/{YYYY}.parquet
 ```
 
 ## 快速启动
 
 ```bash
 # 依赖
-pip install fastapi uvicorn pandas numpy orjson
+pip install fastapi uvicorn pandas numpy orjson pyarrow
 
-# 启动服务 (默认 http://127.0.0.1:8000)
+# 直接启动服务（默认 http://127.0.0.1:8000）
 python server.py
+
+# 或使用 uvicorn
+uvicorn server:app --host 127.0.0.1 --port 8000 --app-dir .
+```
+
+### 行情目录解析
+
+`second_view_app` 不再依赖 `alpha_second_base`。
+
+行情 parquet 根目录按以下优先级解析：
+1. 环境变量 `PARQUET_DIR`
+2. `/Volumes/ssd/us_stock_data/1s_parquet`
+3. `/Volumes/Intel SSD/StockData/1s_parquet`
+
+如需显式指定数据目录，可这样启动：
+
+```bash
+PARQUET_DIR="/your/parquet/root" python server.py
 ```
 
 ## API

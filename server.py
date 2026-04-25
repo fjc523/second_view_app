@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -15,10 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 
+from paths import DEFAULT_PARQUET_DIR as PARQUET_DIR
+
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
-sys.path.insert(0, str(APP_DIR.parent))
-from src.paths import DEFAULT_PARQUET_DIR as PARQUET_DIR  # noqa: E402
 EVENT_LIST_DIR = APP_DIR.parent / "exps" / "event_list"
 AUTO_RESEARCH_DIR = APP_DIR.parent / "auto_research"
 ALPHA_SECOND_V2_EVENT_DIR = APP_DIR.parent / "alpha_second_v2" / "event"
@@ -138,6 +137,17 @@ def _list_event_files() -> list[dict]:
                 "label": event_name,
                 "mtime": int(event_csv.stat().st_mtime),
                 "_path": event_csv,
+            })
+        # 4) alpha_second_v2/event/*/strategy_*/trades.csv — strategy trade cases
+        for trades_csv in ALPHA_SECOND_V2_EVENT_DIR.glob("*/strategy_*/trades.csv"):
+            event_name = trades_csv.parent.parent.name
+            strategy_name = trades_csv.parent.name
+            display = f"{event_name}__{strategy_name}.csv"
+            files.append({
+                "name": display,
+                "label": f"{event_name} / {strategy_name}",
+                "mtime": int(trades_csv.stat().st_mtime),
+                "_path": trades_csv,
             })
     files.sort(key=lambda f: f["mtime"], reverse=True)
     return files
@@ -285,7 +295,17 @@ def _normalize_event_markers(
             "event_time_et": ts_et.strftime("%H:%M:%S"),
             "is_anchor": idx == anchor_index,
         }
-        for extra_key in ("source", "source_account", "add_size", "source_row"):
+        for extra_key in (
+            "source",
+            "source_account",
+            "add_size",
+            "source_row",
+            "marker_type",
+            "entry_price",
+            "exit_price",
+            "exit_reason",
+            "signal_band",
+        ):
             if extra_key in raw_marker and raw_marker[extra_key] is not None:
                 marker[extra_key] = raw_marker[extra_key]
         markers.append(marker)
