@@ -13,21 +13,10 @@ function currentDateEvents() {
   return state.replayEvents.filter(event => event.date === state.currentDate);
 }
 
-function currentVisibleBuys() {
-  const filtered = state.currentSymbol === 'ALL'
+function visibleEvents() {
+  return state.currentSymbol === 'ALL'
     ? currentDateEvents()
     : currentDateEvents().filter(event => event.symbol === state.currentSymbol);
-  return filtered.filter(event => event.event_type === 'buy');
-}
-
-function linkedReviewIds(eventId) {
-  const event = state.replayEventMap[eventId];
-  if (!event) return [];
-  const linked = event.linked_closed_trade_rows || [];
-  if (linked.length === 0) return [eventId];
-  return state.replayEvents
-    .filter(e => (e.linked_closed_trade_rows || []).some(idx => linked.includes(idx)))
-    .map(e => e.event_id);
 }
 
 function currentVisibleBuys() {
